@@ -22,6 +22,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.user import User
 from app.schemas.document import AgentReportRequest
 from app.services.agent_pdf import render_markdown_to_pdf
+from app.services.document_sections import split_into_sections
 from app.services.document_text_extractor import extract_full_text
 
 logger = logging.getLogger(__name__)
@@ -87,12 +88,8 @@ async def list_agent_pending(db: AsyncSession = Depends(get_db)):
     return {"count": len(documents), "truncated": truncated, "documents": documents}
 
 
-@router.get(
-    "/{document_id}/agent-content",
-    dependencies=[Depends(verify_n8n_webhook_secret)],
-)
-async def get_agent_content(document_id: int, db: AsyncSession = Depends(get_db)):
-    """Raw text of a PENDING document, for the n8n AI Agent to reason over."""
+async def _load_pending_document(db: AsyncSession, document_id: int) -> Document:
+    """Fetch a document the agent may still act on, or raise 404/409."""
     document = (
         await db.execute(select(Document).where(Document.id == document_id))
     ).scalar_one_or_none()
@@ -101,6 +98,17 @@ async def get_agent_content(document_id: int, db: AsyncSession = Depends(get_db)
 
     if document.status != DocumentStatus.PENDING:
         raise ConflictError("Document is no longer pending")
+
+    return document
+
+
+@router.get(
+    "/{document_id}/agent-content",
+    dependencies=[Depends(verify_n8n_webhook_secret)],
+)
+async def get_agent_content(document_id: int, db: AsyncSession = Depends(get_db)):
+    """Raw text of a PENDING document, for the n8n AI Agent to reason over."""
+    document = await _load_pending_document(db, document_id)
 
     file_path = UPLOAD_DIR / document.filename
     if not file_path.exists():
@@ -121,6 +129,59 @@ async def get_agent_content(document_id: int, db: AsyncSession = Depends(get_db)
         "content": extracted.content,
         "truncated": extracted.truncated,
         "message": None if extracted.supported else "Preview not supported for this file type",
+    }
+
+
+@router.get(
+    "/{document_id}/agent-sections",
+    dependencies=[Depends(verify_n8n_webhook_secret)],
+)
+async def get_agent_sections(
+    document_id: int,
+    index: int | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """List a pending document's sections, or return one section's text.
+
+    Without *index* this answers with headings only, so the agent can choose
+    where a question belongs without paying for the whole file; with *index*
+    it returns that section alone.
+    """
+    document = await _load_pending_document(db, document_id)
+
+    file_path = UPLOAD_DIR / document.filename
+    if not file_path.exists():
+        raise NotFoundError("Document file", document_id)
+
+    extracted = await extract_full_text(file_path, document.file_type)
+    sections = split_into_sections(extracted.content or "") if extracted.supported else []
+
+    if index is None:
+        logger.info(
+            f"n8n agent-sections: listed {len(sections)} section(s) of document {document_id}"
+        )
+        return {
+            "id": document.id,
+            "filename": document.original_filename,
+            "supported": extracted.supported,
+            "truncated": extracted.truncated,
+            "count": len(sections),
+            "sections": [
+                {"index": position, "heading": section.heading, "chars": len(section.content)}
+                for position, section in enumerate(sections)
+            ],
+        }
+
+    if index < 0 or index >= len(sections):
+        raise NotFoundError("Document section", index)
+
+    section = sections[index]
+    logger.info(f"n8n agent-sections: served section {index} of document {document_id}")
+    return {
+        "id": document.id,
+        "index": index,
+        "heading": section.heading,
+        "content": section.content,
     }
 
 
