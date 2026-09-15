@@ -274,9 +274,9 @@ def make_document(test_db: AsyncSession):
     ) -> Document:
         document = Document(
             workspace_id=workspace_id,
-            filename=f"stored_{original_filename}",
+            filename=columns.pop("filename", f"stored_{original_filename}"),
             original_filename=original_filename,
-            file_type="pdf",
+            file_type=columns.pop("file_type", "pdf"),
             file_size=1024,
             status=status,
             approval_status=approval_status,

@@ -11,6 +11,7 @@ from app.api.expert import router as expert_router
 from app.api.stt import router as stt_router
 from app.api.business import router as business_router
 from app.api.business_chat import router as business_chat_router
+from app.api.n8n_agent import router as n8n_agent_router
 
 api_router = APIRouter()
 api_router.include_router(workspaces_router)
@@ -21,3 +22,4 @@ api_router.include_router(expert_router)
 api_router.include_router(stt_router)
 api_router.include_router(business_router)
 api_router.include_router(business_chat_router)
+api_router.include_router(n8n_agent_router)

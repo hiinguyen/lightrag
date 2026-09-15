@@ -20,6 +20,7 @@ cohere>=5.0.0
 
 # Document parsing (Docling — default parser)
 docling>=2.0.0
+PyMuPDF>=1.24.0
 
 # Structured spreadsheet parsing (.xlsx / .csv)
 pandas>=2.2.0
@@ -46,6 +47,7 @@ pydantic-settings>=2.1.0
 httpx>=0.25.0
 aiofiles>=23.2.1
 Pillow>=11.0.0
+fpdf2>=2.7.0
 # Auth / Security
 python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.0

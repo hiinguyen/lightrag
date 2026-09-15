@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import hmac
 import os
 import re
 import uuid
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from app.core.config import settings
-from app.core.deps import get_db
+from app.core.deps import get_db, verify_n8n_webhook_secret
 from app.core.security import get_current_user
 from app.core.exceptions import NotFoundError
 from app.models.knowledge_base import KnowledgeBase
@@ -313,26 +312,22 @@ async def _finalize_approval_and_ingest(
     return target_ws
 
 
-@router.post("/{document_id}/approval-callback")
+@router.post(
+    "/{document_id}/approval-callback",
+    dependencies=[Depends(verify_n8n_webhook_secret)],
+)
 async def approval_callback(
     document_id: int,
     payload: ApprovalCallbackRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    x_webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
 ):
     """Callback n8n calls after the approval email is answered.
 
     Treats the email response as the final approval decision (bypasses the
-    in-app department -> organization approval chain). Authenticated via a
-    shared secret in the X-Webhook-Secret header, matched against
-    N8N_CALLBACK_SECRET with a constant-time comparison.
+    in-app department -> organization approval chain). Authenticated via
+    app.core.deps.verify_n8n_webhook_secret (shared secret, X-Webhook-Secret).
     """
-    if not settings.N8N_CALLBACK_SECRET or not x_webhook_secret or not hmac.compare_digest(
-        x_webhook_secret, settings.N8N_CALLBACK_SECRET
-    ):
-        logger.warning(f"Rejected approval-callback call for document {document_id}: invalid webhook secret")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret")
 
     result = await db.execute(select(Document).where(Document.id == document_id))
     document = result.scalar_one_or_none()

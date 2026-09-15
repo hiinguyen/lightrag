@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from app.models.document import DocumentStatus
 
@@ -53,3 +53,10 @@ class ApprovalCallbackRequest(BaseModel):
 
     approved: bool
     note: str | None = None
+
+
+class AgentReportRequest(BaseModel):
+    """Body n8n's AI Agent posts to render its drafted answer as a PDF."""
+
+    title: str = Field(max_length=500)
+    content_markdown: str = Field(min_length=1, max_length=100_000)

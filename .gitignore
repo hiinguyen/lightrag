@@ -142,6 +142,9 @@ logs/
 # uvicorn logs
 uvicorn*.log
 
+# Git worktrees (superpowers subagent-driven-development scratch workspaces)
+.worktrees/
+
 # =============================================================================
 # Temporary / OS
 # =============================================================================
