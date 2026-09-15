@@ -19,6 +19,7 @@ from app.api.documents import UPLOAD_DIR
 from app.core.deps import get_db, verify_n8n_webhook_secret
 from app.core.exceptions import ConflictError, NotFoundError
 from app.models.document import Document, DocumentStatus
+from app.models.user import User
 from app.schemas.document import AgentReportRequest
 from app.services.agent_pdf import render_markdown_to_pdf
 from app.services.document_text_extractor import extract_full_text
@@ -26,6 +27,64 @@ from app.services.document_text_extractor import extract_full_text
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["n8n-agent"])
+
+AGENT_PENDING_LIMIT = 50
+
+
+@router.get(
+    "/agent/pending",
+    dependencies=[Depends(verify_n8n_webhook_secret)],
+)
+async def list_agent_pending(db: AsyncSession = Depends(get_db)):
+    """Documents still awaiting an approval decision, newest first.
+
+    Two path segments on purpose: documents.py registers /{document_id}
+    first, and a single-segment /agent-pending would be swallowed by it.
+    An admin upload arrives pre-approved, so approval_status filters it out
+    even though it is still PENDING processing.
+
+    Reads one row past the cap to report `truncated`, so a backlog longer
+    than the cap is visible to the group instead of silently dropping the
+    oldest requests off the list.
+    """
+    rows = (
+        await db.execute(
+            select(Document, User)
+            .outerjoin(User, Document.uploader_id == User.id)
+            .where(
+                Document.status == DocumentStatus.PENDING,
+                Document.approval_status == "pending",
+            )
+            .order_by(Document.created_at.desc(), Document.id.desc())
+            .limit(AGENT_PENDING_LIMIT + 1)
+        )
+    ).all()
+
+    truncated = len(rows) > AGENT_PENDING_LIMIT
+    rows = rows[:AGENT_PENDING_LIMIT]
+
+    documents = [
+        {
+            "id": document.id,
+            "filename": document.original_filename,
+            "file_type": document.file_type,
+            "file_size": document.file_size,
+            "workspace_id": document.workspace_id,
+            "department_id": document.department_id,
+            "uploader": (
+                {"name": uploader.name, "email": uploader.email} if uploader else None
+            ),
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+        }
+        for document, uploader in rows
+    ]
+
+    logger.info(
+        f"n8n agent/pending: served {len(documents)} document(s) awaiting approval, "
+        f"truncated={truncated}"
+    )
+
+    return {"count": len(documents), "truncated": truncated, "documents": documents}
 
 
 @router.get(
