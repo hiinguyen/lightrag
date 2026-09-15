@@ -7,15 +7,22 @@ no-op (n8n integration is optional).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
 
 from app.core.config import settings
+from app.services.document_summarizer import ensure_document_summary
 
 logger = logging.getLogger(__name__)
 
 WEBHOOK_TIMEOUT_SECONDS = 5.0
+
+# How long the approval request may wait on a summary. A provider that fails
+# fast already degrades gracefully; this is the bound for one that hangs,
+# which would otherwise hold the notification forever.
+SUMMARY_TIMEOUT_SECONDS = 120.0
 
 
 async def notify_document_uploaded(document_id: int) -> None:
@@ -45,6 +52,21 @@ async def notify_document_uploaded(document_id: int) -> None:
                 uploader_result = await db.execute(select(User).where(User.id == document.uploader_id))
                 uploader = uploader_result.scalar_one_or_none()
 
+            # Only documents that still need a decision are worth the LLM call;
+            # a pre-approved upload goes straight to processing, unread.
+            if document.approval_status == "pending":
+                try:
+                    await asyncio.wait_for(
+                        ensure_document_summary(db, document),
+                        timeout=SUMMARY_TIMEOUT_SECONDS,
+                    )
+                except Exception as e:
+                    # The approval request must go out even with no summary:
+                    # an LLM outage cannot be allowed to stall approvals.
+                    logger.warning(
+                        f"n8n webhook: summary unavailable for document {document_id}: {e}"
+                    )
+
             payload = {
                 "event": "document.uploaded",
                 "document": {
@@ -58,6 +80,7 @@ async def notify_document_uploaded(document_id: int) -> None:
                     "visibility": document.visibility,
                     "approval_status": document.approval_status,
                     "created_at": document.created_at.isoformat() if document.created_at else None,
+                    "summary": document.summary,
                 },
                 "uploader": {
                     "id": uploader.id,

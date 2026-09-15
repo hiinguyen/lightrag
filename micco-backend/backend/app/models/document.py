@@ -54,6 +54,11 @@ class Document(Base):
         Boolean, nullable=False, default=False, server_default=false()
     )
 
+    # Precomputed at upload for the approval notification, so the group chat
+    # reads a summary without paying an LLM call per question. Stays NULL when
+    # the file type has no extractable text or the LLM was unavailable.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # NexusRAG fields
     markdown_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_count: Mapped[int] = mapped_column(Integer, default=0)

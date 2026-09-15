@@ -5,6 +5,7 @@ External HTTP calls (httpx) and the DB session factory are mocked per
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import httpx
@@ -83,6 +84,7 @@ class _FakeAsyncClient:
 def _fake_document(**overrides) -> SimpleNamespace:
     defaults = dict(
         id=42,
+        filename="stored_report.pdf",
         original_filename="report.pdf",
         file_type="pdf",
         file_size=1024,
@@ -93,6 +95,7 @@ def _fake_document(**overrides) -> SimpleNamespace:
         approval_status="pending",
         created_at=None,
         uploader_id=7,
+        summary=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -165,6 +168,91 @@ async def test_notify_document_uploaded_omits_uploader_when_none(monkeypatch):
 
     _, payload = _FakeAsyncClient.last_instance.posted[0]
     assert payload["uploader"] is None
+
+
+async def test_notify_document_uploaded_ships_the_precomputed_summary(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    document = _fake_document(summary="Hợp đồng cung cấp thuốc nổ, hiệu lực 12 tháng.")
+    _patch_db(monkeypatch, document=document, user=None)
+
+    async def _unexpected(db, doc):
+        raise AssertionError("an existing summary must not be regenerated")
+
+    monkeypatch.setattr(n8n_webhook, "ensure_document_summary", _unexpected)
+
+    await n8n_webhook.notify_document_uploaded(document.id)
+
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["document"]["summary"] == "Hợp đồng cung cấp thuốc nổ, hiệu lực 12 tháng."
+
+
+async def test_notify_document_uploaded_generates_a_missing_summary(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    document = _fake_document(summary=None)
+    _patch_db(monkeypatch, document=document, user=None)
+
+    async def _summarise(db, doc):
+        doc.summary = "Tóm tắt sinh lúc tải lên."
+        return doc.summary
+
+    monkeypatch.setattr(n8n_webhook, "ensure_document_summary", _summarise)
+
+    await n8n_webhook.notify_document_uploaded(document.id)
+
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["document"]["summary"] == "Tóm tắt sinh lúc tải lên."
+
+
+async def test_notify_document_uploaded_still_notifies_when_summarising_fails(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    document = _fake_document(summary=None)
+    _patch_db(monkeypatch, document=document, user=None)
+
+    async def _failing(db, doc):
+        raise RuntimeError("LLM provider down")
+
+    monkeypatch.setattr(n8n_webhook, "ensure_document_summary", _failing)
+
+    await n8n_webhook.notify_document_uploaded(document.id)
+
+    # The approval request is the point of this webhook; the summary is a bonus.
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["document"]["id"] == document.id
+    assert payload["document"]["summary"] is None
+
+
+async def test_notify_document_uploaded_gives_up_on_a_hanging_summariser(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    monkeypatch.setattr(n8n_webhook, "SUMMARY_TIMEOUT_SECONDS", 0.01)
+    document = _fake_document(summary=None)
+    _patch_db(monkeypatch, document=document, user=None)
+
+    async def _hanging(db, doc):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(n8n_webhook, "ensure_document_summary", _hanging)
+
+    await n8n_webhook.notify_document_uploaded(document.id)
+
+    # A provider that hangs must not hold the approval request hostage.
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["document"]["summary"] is None
+
+
+async def test_notify_document_uploaded_skips_summary_for_preapproved_uploads(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    document = _fake_document(approval_status="approved", summary=None)
+    _patch_db(monkeypatch, document=document, user=None)
+
+    async def _unexpected(db, doc):
+        raise AssertionError("nobody has to decide on a pre-approved upload")
+
+    monkeypatch.setattr(n8n_webhook, "ensure_document_summary", _unexpected)
+
+    await n8n_webhook.notify_document_uploaded(document.id)
+
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["document"]["summary"] is None
 
 
 async def test_notify_document_uploaded_swallows_http_errors(monkeypatch):

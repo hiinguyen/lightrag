@@ -29,8 +29,15 @@ class ExtractedText:
     truncated: bool
 
 
-async def extract_full_text(file_path: Path, file_type: str) -> ExtractedText:
-    """Extract plain text from *file_path*, capped at AGENT_CONTENT_MAX_CHARS."""
+async def extract_full_text(
+    file_path: Path, file_type: str, *, max_chars: int = AGENT_CONTENT_MAX_CHARS
+) -> ExtractedText:
+    """Extract plain text from *file_path*, capped at *max_chars*.
+
+    The cap is a parameter because the two readers want different amounts:
+    the agent-content endpoint ships text into one LLM prompt, while
+    map-reduce summarisation chunks far more text across several calls.
+    """
     ext = file_type.lower()
     if ext not in _SUPPORTED_EXTENSIONS:
         return ExtractedText(supported=False, content=None, truncated=False)
@@ -51,8 +58,8 @@ async def extract_full_text(file_path: Path, file_type: str) -> ExtractedText:
             logger.warning(f"Failed to extract pdf text from {file_path}", exc_info=True)
             return ExtractedText(supported=False, content=None, truncated=False)
 
-    truncated = len(raw) > AGENT_CONTENT_MAX_CHARS
-    content = raw[:AGENT_CONTENT_MAX_CHARS] if truncated else raw
+    truncated = len(raw) > max_chars
+    content = raw[:max_chars] if truncated else raw
     return ExtractedText(supported=True, content=content, truncated=truncated)
 
 
