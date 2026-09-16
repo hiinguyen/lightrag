@@ -176,3 +176,5 @@ everything-claude-code/
 paper_outline.txt
 tech_paper_outline.txt
 .claude/skills/*/.temp-execution-*.js
+# Tài liệu mẫu để test cổng B2B (placeholder, không commit)
+test-documents/
