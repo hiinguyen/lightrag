@@ -8,7 +8,7 @@ import { renderAsync } from 'docx-preview';
 import { useAuth } from '../context/AuthContext';
 import { approvalsApi } from '../utils/api';
 import Breadcrumb from '../components/shared/Breadcrumb';
-import ProcessingProgressBar, { PROCESSING_STEPS, getStepIndex } from '../components/shared/ProcessingProgressBar';
+import ProcessingProgressBar from '../components/shared/ProcessingProgressBar';
 
 const PREVIEWABLE = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'docx', 'txt', 'md'];
 const MIME_MAP = {
@@ -64,7 +64,7 @@ export default function Approvals() {
     }, [authFetch]);
 
     // Poll processing status for a document
-    const startPolling = useCallback((docId) => {
+    const startPolling = useCallback((docId, docName) => {
         if (pollingRef.current[docId]) return; // already polling
         pollingRef.current[docId] = true;
 
@@ -78,6 +78,16 @@ export default function Approvals() {
                     // Stop polling when done or failed
                     if (st.status === 'indexed' || st.status === 'failed') {
                         pollingRef.current[docId] = false;
+                        if (st.status === 'failed') {
+                            // Tài liệu lỗi quay lại hàng đợi phê duyệt — báo lý do và
+                            // nạp lại danh sách để người duyệt thấy nó trở lại ngay.
+                            showToast(
+                                `Xử lý "${docName || `tài liệu #${docId}`}" thất bại: ${st.error_message || 'lỗi không xác định'}. Tài liệu đã quay lại hàng đợi phê duyệt.`,
+                                'error',
+                            );
+                            refreshApprovals();
+                            await fetchPending();
+                        }
                         // Remove from processing list after short delay (so user sees completion)
                         setTimeout(() => {
                             setProcessingDocs(prev => prev.filter(d => d.id !== docId));
@@ -96,7 +106,7 @@ export default function Approvals() {
             }
         };
         poll();
-    }, []);
+    }, [fetchPending, refreshApprovals]);
 
     const stopPolling = useCallback((docId) => {
         pollingRef.current[docId] = false;
@@ -204,7 +214,7 @@ export default function Approvals() {
                         }
                         // Start polling processing status
                         setProcessingState(prev => ({ ...prev, [id]: { status: 'processing', chunk_count: 0 } }));
-                        startPolling(id);
+                        startPolling(id, doc?.name);
                     } else {
                         // After TP approve public docs, it should appear in admin queue.
                         await fetchPending();

@@ -35,6 +35,7 @@ from app.services.reranker import get_reranker_service
 from app.services.rag_service import RAGQueryResult, RetrievedChunk
 from app.services.models.parsed_document import DeepRetrievalResult
 from app.services.chunk_dedup import deduplicate_chunks
+from app.services.document_failure import mark_document_failed
 
 logger = logging.getLogger(__name__)
 
@@ -307,9 +308,7 @@ class NexusRAGService:
 
         except Exception as e:
             logger.error(f"NexusRAG failed for document {document_id}: {e}")
-            document.status = DocumentStatus.FAILED
-            document.error_message = str(e)[:500]
-            await self.db.commit()
+            await mark_document_failed(self.db, document, e)
             raise
 
     async def process_knowledge_entry(self, entry_id: int) -> int:

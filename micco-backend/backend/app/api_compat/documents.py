@@ -358,18 +358,40 @@ async def upload_documents(
 
 # ─── Processing Status ────────────────────────────────────
 
+# Status groups behind the "Tiến trình xử lý" tabs. Ordered the way a document
+# travels: waiting for an approver → in the pipeline → done, with failures as
+# their own group so a crashed ingestion is never mistaken for work in flight.
+PENDING_STATUSES = ["PENDING"]
+IN_PIPELINE_STATUSES = ["PARSING", "PROCESSING", "INDEXING"]
+STATUS_GROUPS = {
+    "pending": PENDING_STATUSES,
+    "processing": IN_PIPELINE_STATUSES,
+    "failed": ["FAILED"],
+    "indexed": ["INDEXED"],
+    "all": PENDING_STATUSES + IN_PIPELINE_STATUSES + ["FAILED", "INDEXED"],
+}
+
+
 @router.get("/processing-status", response_model=ProcessingStatusListResponse)
 async def get_processing_status(
-    filter: str = Query("all", description="Filter group: all | processing | indexed | failed"),
+    filter: str = Query(
+        "all",
+        description="Filter group: all | pending | processing | indexed | failed",
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Get documents by processing status group.
-    - `all`        → pending / parsing / processing / indexing (active only)
-    - `processing` → same as `all`
+    - `all`        → every group below
+    - `pending`    → waiting for an approver (PENDING)
+    - `processing` → actually being worked on (PARSING / PROCESSING / INDEXING)
     - `indexed`    → completed (INDEXED)
-    - `failed`     → failed (FAILED)
+    - `failed`     → ingestion crashed (FAILED)
+
+    `pending` is deliberately separate from `processing`: a document waiting on
+    an approver is not the same thing as one the pipeline is chewing on, and the
+    UI shows them as distinct states.
 
     Always returns `counts` with totals for all groups (for tab badges).
 
@@ -377,19 +399,8 @@ async def get_processing_status(
     FastAPI from trying to parse "processing-status" as an integer.
     """
     from app.schemas.compat import StatusCounts
-    from sqlalchemy import case
 
-    # ── Determine which statuses to fetch ────────────────────────
-    ACTIVE_STATUSES = ["PENDING", "PARSING", "PROCESSING", "INDEXING"]
-
-    if filter in ("all", "processing"):
-        fetch_statuses = ACTIVE_STATUSES
-    elif filter == "indexed":
-        fetch_statuses = ["INDEXED"]
-    elif filter == "failed":
-        fetch_statuses = ["FAILED"]
-    else:
-        fetch_statuses = ACTIVE_STATUSES  # fallback
+    fetch_statuses = STATUS_GROUPS.get(filter, STATUS_GROUPS["all"])
 
     # ── Base access-scope sub-filter ─────────────────────────────
     if current_user.role in ("Admin", "Trưởng phòng"):
@@ -423,6 +434,7 @@ async def get_processing_status(
             id=doc.id,
             name=doc.original_filename or doc.filename,
             status=doc.status.value if hasattr(doc.status, "value") else doc.status,
+            approval_status=doc.approval_status,
             chunk_count=doc.chunk_count or 0,
             error_message=doc.error_message,
             uploader_name=uploader_name or "Không rõ",
@@ -437,9 +449,12 @@ async def get_processing_status(
     # ── Compute counts for ALL groups (for tab badges) ────────────
     count_stmt = (
         select(
-            func.count(Document.id).filter(Document.status.in_(ACTIVE_STATUSES)).label("processing"),
-            func.count(Document.id).filter(Document.status == "INDEXED").label("indexed"),
-            func.count(Document.id).filter(Document.status == "FAILED").label("failed"),
+            *[
+                func.count(Document.id)
+                .filter(Document.status.in_(statuses))
+                .label(group)
+                for group, statuses in STATUS_GROUPS.items()
+            ]
         )
         .where(
             Document.approval_status != "rejected",
@@ -447,15 +462,8 @@ async def get_processing_status(
         )
     )
     count_row = (await db.execute(count_stmt)).one()
-    cnt_processing = count_row.processing or 0
-    cnt_indexed = count_row.indexed or 0
-    cnt_failed = count_row.failed or 0
-
     counts = StatusCounts(
-        all=cnt_processing,          # "Tất cả" badge = active docs
-        processing=cnt_processing,
-        indexed=cnt_indexed,
-        failed=cnt_failed,
+        **{group: getattr(count_row, group) or 0 for group in STATUS_GROUPS}
     )
 
     return ProcessingStatusListResponse(items=items, total=len(items), counts=counts)

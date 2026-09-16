@@ -61,3 +61,73 @@ def test_render_markdown_to_pdf_skips_empty_heading_line():
         extracted_text = "\n".join(page.get_text() for page in doc)
 
     assert "Nội dung sau heading rỗng." in extracted_text
+
+
+def test_render_markdown_to_pdf_renders_bold_text_without_asterisks():
+    pdf_bytes = render_markdown_to_pdf(
+        title="Báo cáo",
+        content_markdown="**Base URL:** địa chỉ endpoint mặc định.",
+    )
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        extracted_text = "\n".join(page.get_text() for page in doc)
+
+    assert "Base URL:" in extracted_text
+    assert "**" not in extracted_text
+
+
+def test_render_markdown_to_pdf_renders_nested_heading_levels():
+    pdf_bytes = render_markdown_to_pdf(
+        title="Báo cáo",
+        content_markdown="## Mục 2\n\n### Mục 2.1\n\nNội dung chi tiết.",
+    )
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        extracted_text = "\n".join(page.get_text() for page in doc)
+
+    assert "Mục 2" in extracted_text
+    assert "Mục 2.1" in extracted_text
+    assert "Nội dung chi tiết." in extracted_text
+    assert "##" not in extracted_text
+
+
+def test_render_markdown_to_pdf_renders_list_immediately_after_paragraph_as_bullets():
+    """Regression test: the n8n AI Agent's markdown often has no blank line
+    between a preceding paragraph/bold line and a following list, which
+    python-markdown (unlike CommonMark) refuses to parse as a real list —
+    the '-' markers used to leak through as literal text instead of bullets.
+    """
+    pdf_bytes = render_markdown_to_pdf(
+        title="Báo cáo",
+        content_markdown=(
+            "**Cách kết nối:**\n"
+            "- mục một\n"
+            "- mục hai\n"
+        ),
+    )
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        extracted_text = "\n".join(page.get_text() for page in doc)
+
+    assert "mục một" in extracted_text
+    assert "mục hai" in extracted_text
+    assert "\n- mục một" not in extracted_text
+
+
+def test_render_markdown_to_pdf_strips_image_markdown():
+    """Image markdown is stripped rather than rendered: the AI Agent has no
+    real image to attach, and fetching a hallucinated URL would be SSRF risk.
+    """
+    pdf_bytes = render_markdown_to_pdf(
+        title="Báo cáo",
+        content_markdown=(
+            "Nội dung chính.\n\n"
+            "![Kiến trúc kết nối client OpenAI-compatible với 9Router]"
+        ),
+    )
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        extracted_text = "\n".join(page.get_text() for page in doc)
+
+    assert "Nội dung chính." in extracted_text
+    assert "![" not in extracted_text

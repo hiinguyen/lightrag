@@ -83,3 +83,46 @@ async def test_admin_approve_document_ingests_via_shared_helper(
     await test_db.refresh(doc)
     assert doc.approval_status == "approved"
     assert doc.status == DocumentStatus.PROCESSING
+
+
+async def test_approve_after_failed_ingest_restarts_processing(
+    approvals_client: AsyncClient,
+    admin_user,
+    make_workspace,
+    make_document,
+    monkeypatch,
+    test_db,
+):
+    """A crashed ingestion is retried by approving the document again.
+
+    app.services.document_failure hands a FAILED document back to the approval
+    queue, so the approve endpoint must accept FAILED as a starting state and
+    clear the stale error instead of silently doing nothing.
+    """
+    recorder = _RecordingIngest()
+    monkeypatch.setattr(documents_module, "process_document_background", recorder)
+
+    workspace = await make_workspace(name="KB Retry Test")
+    doc = await make_document(
+        workspace_id=workspace.id,
+        status=DocumentStatus.FAILED,
+        approval_status="pending",
+        visibility="internal",
+        error_message="Hết bộ nhớ GPU khi xử lý tài liệu.",
+    )
+
+    from app.core.security import create_access_token
+
+    token = create_access_token(data={"sub": admin_user.id})
+    approvals_client.headers.update({"Authorization": f"Bearer {token}"})
+
+    response = await approvals_client.post(APPROVE_URL.format(doc_id=doc.id))
+
+    assert response.status_code == 200
+    assert response.json()["processing_started"] is True
+    assert len(recorder.calls) == 1
+
+    await test_db.refresh(doc)
+    assert doc.approval_status == "approved"
+    assert doc.status == DocumentStatus.PROCESSING
+    assert doc.error_message is None

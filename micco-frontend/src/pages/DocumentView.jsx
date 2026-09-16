@@ -10,14 +10,65 @@ import { documentsApi, approvalsApi } from '../utils/api';
 import { formatBytes, formatDate, timeAgo, getInitials, avatarColor } from '../utils/formatters';
 import { renderAsync } from 'docx-preview';
 import ProcessingProgressBar from '../components/shared/ProcessingProgressBar';
+import {
+    DOCUMENT_STATES,
+    resolveDocumentState,
+    getApprovalStageLabel,
+} from '../utils/documentStatus';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Trạng thái tài liệu ở khung thông tin bên phải.
+ * Tài liệu đang chạy pipeline thì hiện thanh tiến trình; các trạng thái còn lại
+ * (chờ duyệt / lỗi / từ chối) hiện badge, kèm lý do lỗi khi có.
+ */
+function DocumentStatusMeta({ doc, processingStatus }) {
+    const state = resolveDocumentState({
+        ...doc,
+        status: processingStatus?.status || doc?.status,
+    });
+    const StateIcon = state.icon;
+    const showProgressBar =
+        Boolean(processingStatus) &&
+        (state === DOCUMENT_STATES.processing || state === DOCUMENT_STATES.indexed);
+
+    if (showProgressBar) {
+        return (
+            <ProcessingProgressBar
+                status={processingStatus.status}
+                chunkCount={processingStatus.chunk_count}
+                compact
+            />
+        );
+    }
+
+    const errorMessage = processingStatus?.error_message || doc?.error_message;
+
+    return (
+        <div className="flex flex-col items-end gap-1 min-w-0">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${state.badge}`}>
+                <StateIcon className={`w-3 h-3 flex-shrink-0 ${state.spin ? 'animate-spin' : ''}`} />
+                {state === DOCUMENT_STATES.awaiting_approval
+                    ? getApprovalStageLabel(doc?.approval_status)
+                    : state.label}
+            </span>
+            {state === DOCUMENT_STATES.failed && (
+                <p className="text-[11px] text-red-500 dark:text-red-400/80 text-right line-clamp-3" title={errorMessage || ''}>
+                    {errorMessage || 'Xử lý thất bại.'}
+                </p>
+            )}
+        </div>
+    );
+}
 
 function MetaRow({ label, value }) {
     return (
         <div className="flex items-start justify-between gap-4 text-xs">
             <span className="text-slate-400 shrink-0">{label}</span>
-            <span className="font-medium text-slate-800 dark:text-slate-200 text-right">{value}</span>
+            {/* min-w-0 + break-words: giá trị có thể dài (vd. thông báo lỗi CUDA)
+                và không được tràn ra ngoài panel thông tin. */}
+            <span className="font-medium text-slate-800 dark:text-slate-200 text-right min-w-0 break-words">{value}</span>
         </div>
     );
 }
@@ -434,22 +485,7 @@ export default function DocumentView() {
                                 </span>
                             } />
                             <MetaRow label="Trạng thái" value={
-                                processingStatus ? (
-                                    <ProcessingProgressBar
-                                        status={processingStatus.status}
-                                        chunkCount={processingStatus.chunk_count}
-                                        errorMessage={processingStatus.error_message}
-                                        compact
-                                    />
-                                ) : (
-                                    <span className={`text-xs font-semibold ${
-                                        doc?.approval_status === 'approved' ? 'text-emerald-600' :
-                                        doc?.approval_status === 'rejected' ? 'text-red-600' : 'text-amber-600'
-                                    }`}>
-                                        {doc?.approval_status === 'approved' ? 'Đã phê duyệt' :
-                                         doc?.approval_status === 'rejected' ? 'Từ chối' : 'Chờ phê duyệt'}
-                                    </span>
-                                )
+                                <DocumentStatusMeta doc={doc} processingStatus={processingStatus} />
                             } />
                             {tags.length > 0 && (
                                 <div>

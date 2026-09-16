@@ -240,7 +240,8 @@ async def process_document(
         timeout = settings.NEXUSRAG_PROCESSING_TIMEOUT_MINUTES
         cutoff = datetime.utcnow() - timedelta(minutes=timeout)
         if document.updated_at < cutoff:
-            # Stale — reset to allow re-processing
+            # Stale — this endpoint retries immediately below, so only the
+            # status is cleared; the approval stage is left untouched.
             document.status = DocumentStatus.FAILED
             document.error_message = f"Processing timeout ({timeout}min). Retrying..."
             await db.commit()

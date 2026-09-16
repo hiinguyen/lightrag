@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Breadcrumb from '../components/shared/Breadcrumb';
+import { resolveDocumentState } from '../utils/documentStatus';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend, AreaChart, Area
@@ -52,17 +53,16 @@ function StatCard({ label, value, numValue, icon: Icon, gradient, suffix = '', p
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
-const STATUS_CFG = {
-    indexed: { label: 'Đã lập chỉ mục', color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400' },
-    processing: { label: 'Đang xử lý', color: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400' },
-    pending: { label: 'Chờ xử lý', color: 'text-gray-500 bg-gray-100 dark:bg-gray-700 dark:text-gray-400' },
-    failed: { label: 'Lỗi', color: 'text-red-600 bg-red-50 dark:bg-red-500/10 dark:text-red-400' },
-    parsing: { label: 'Phân tích', color: 'text-blue-600 bg-blue-50 dark:bg-blue-500/10 dark:text-blue-400' },
-    indexing: { label: 'Lập chỉ mục', color: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10 dark:text-violet-400' },
-};
-function StatusBadge({ status }) {
-    const cfg = STATUS_CFG[status] || { label: status, color: 'text-gray-500 bg-gray-100' };
-    return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.label}</span>;
+// Nhãn/màu lấy từ utils/documentStatus.js để trùng với trang Tài liệu và Tiến trình.
+function StatusBadge({ status, approvalStatus }) {
+    const state = resolveDocumentState({ status, approval_status: approvalStatus });
+    const StateIcon = state.icon;
+    return (
+        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${state.badge}`}>
+            <StateIcon className={`w-3 h-3 ${state.spin ? 'animate-spin' : ''}`} />
+            {state.shortLabel}
+        </span>
+    );
 }
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ export default function Dashboard() {
                                         </td>
                                         <td className="px-5 py-2 text-gray-500 truncate max-w-[120px]">{doc.workspace}</td>
                                         <td className="px-5 py-2 text-gray-500">{doc.size}</td>
-                                        <td className="px-5 py-2"><StatusBadge status={doc.status} /></td>
+                                        <td className="px-5 py-2"><StatusBadge status={doc.status} approvalStatus={doc.approval_status} /></td>
                                     </tr>
                                 ))}
                             </tbody>
