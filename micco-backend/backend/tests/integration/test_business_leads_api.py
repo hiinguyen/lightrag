@@ -7,11 +7,28 @@ an id the model or the client made up cannot reach a lead as a real package.
 """
 from __future__ import annotations
 
+import pytest
 from httpx import AsyncClient
 
 import app.api.business_leads as business_leads_module
 
 LEADS_URL = "/api/v1/business/leads"
+
+
+@pytest.fixture(autouse=True)
+def _no_op_lead_notifier(monkeypatch):
+    """Every test here creates a real lead, which schedules a background call
+    to notify_lead_created — and N8N_WEBHOOK_URL is a real, configured URL in
+    this environment's .env. Left unmocked, that background task opens a real
+    connection to the (non-test) database on every test run here, per
+    .claude/rules/testing.md's "mock external calls" rule. The one test that
+    cares about the call re-mocks it with its own recorder, which simply wins
+    for that test."""
+
+    async def _noop(lead_id: int) -> None:
+        pass
+
+    monkeypatch.setattr(business_leads_module, "notify_lead_created", _noop)
 
 
 async def test_requires_authentication(client: AsyncClient):
