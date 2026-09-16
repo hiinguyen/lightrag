@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -32,8 +32,27 @@ async def get_or_create_default_workspace(db: AsyncSession) -> KnowledgeBase:
     )
     db.add(workspace)
     await db.commit()
+    await _resync_workspace_id_sequence(db)
     await db.refresh(workspace)
     return workspace
+
+
+async def _resync_workspace_id_sequence(db: AsyncSession) -> None:
+    """Push the identity sequence past the highest existing workspace id.
+
+    This is the only place that inserts a KnowledgeBase with an explicit primary
+    key, and Postgres does not advance the sequence for those. Left alone, the
+    next INSERT that lets the sequence assign an id collides with the row
+    written above and every workspace creation fails with a duplicate-key error
+    until someone runs setval by hand.
+    """
+    await db.execute(
+        text(
+            "SELECT setval(pg_get_serial_sequence('knowledge_bases', 'id'), "
+            "COALESCE((SELECT MAX(id) FROM knowledge_bases), 1))"
+        )
+    )
+    await db.commit()
 
 
 async def get_or_create_department_workspace(
