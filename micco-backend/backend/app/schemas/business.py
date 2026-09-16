@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DataT = TypeVar("DataT")
 
@@ -147,6 +147,18 @@ class BusinessLeadCreateRequest(BaseModel):
 
     summary: str = Field(..., min_length=1, max_length=1000)
     package_ids: list[int] = Field(default_factory=list)
+
+    @field_validator("summary")
+    @classmethod
+    def _strip_and_require_non_blank(cls, value: str) -> str:
+        """min_length checks the raw value, so "   " passes length validation
+        and would otherwise be stored as "" once the endpoint strips it.
+        Stripping here first makes a whitespace-only summary a 422, not a
+        silently-blank lead."""
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("summary must not be blank")
+        return stripped
 
 
 class BusinessLeadCreated(BaseModel):

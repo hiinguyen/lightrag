@@ -80,7 +80,7 @@ SUGGESTION_CONTRACT = """Cách gợi ý gói:
 LEAD_CONTRACT = """Cách chuyển yêu cầu cho đội kinh doanh:
 
 - Khi khách thể hiện ý định **mua/đặt hàng/ký hợp đồng** rõ ràng (không chỉ hỏi thông tin), trả lời như bình thường rồi kết thúc câu trả lời bằng đúng một dòng cuối theo mẫu:
-  [[LEAD: id1,id2|tóm tắt ngắn gọn nhu cầu của khách, kèm ngân sách nếu khách có nêu]]
+  [[LEAD: id1,id2|tóm tắt nhu cầu của khách trong khoảng 300 ký tự, kèm ngân sách nếu khách có nêu]]
   Để trống trước dấu | nếu không có gói cụ thể nào liên quan.
 - Không dùng dòng này cùng lúc với dòng gợi ý gói — chỉ chọn một trong hai, hoặc không dòng nào nếu khách chỉ đang hỏi thông tin. Gợi ý gói dùng khi nhu cầu còn rộng; dòng này dùng khi ý định mua/ký đã rõ.
 - Dòng đó là tín hiệu cho hệ thống, không phải câu văn. Không giải thích nó, không nhắc tới nó, không viết gì sau nó."""

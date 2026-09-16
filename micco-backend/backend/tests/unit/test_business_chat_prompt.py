@@ -95,3 +95,12 @@ def test_lead_contract_comes_before_the_guardrail():
 
 def test_lead_contract_mentions_the_sentinel_marker():
     assert "[[LEAD:" in LEAD_CONTRACT
+
+
+def test_lead_contract_bounds_the_summary_length():
+    """The prompt must keep the model well inside LeadSentinelFilter's
+    _MAX_SENTINEL_BODY (600 chars) — an unbounded summary can overflow the
+    sentinel body, which spills raw sentinel text to the customer and drops
+    the lead silently. Pinning "300" here guards the wording that keeps the
+    model from writing an overlong summary in the first place."""
+    assert "300 ký tự" in LEAD_CONTRACT

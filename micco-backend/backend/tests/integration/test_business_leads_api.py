@@ -26,6 +26,14 @@ async def test_empty_summary_is_rejected(business_client: AsyncClient):
     assert response.status_code == 422
 
 
+async def test_whitespace_only_summary_is_rejected(business_client: AsyncClient):
+    """min_length alone checks the raw value, so "   " would otherwise pass
+    validation and get stored as "" once the endpoint strips it."""
+    response = await business_client.post(LEADS_URL, json={"summary": "   ", "package_ids": []})
+
+    assert response.status_code == 422
+
+
 async def test_creates_a_lead_with_the_customers_own_contact_snapshot(
     business_client: AsyncClient, business_user
 ):
