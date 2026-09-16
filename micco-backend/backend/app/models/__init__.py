@@ -6,6 +6,7 @@ from app.models.system_chat_log import SystemChatLog
 from app.models.department import Department
 from app.models.user import User
 from app.models.knowledge_entry import KnowledgeEntry
+from app.models.business_lead import BusinessLead
 from app.models.business_package import BusinessPackage
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "Department",
     "User",
     "KnowledgeEntry",
+    "BusinessLead",
     "BusinessPackage",
 ]
