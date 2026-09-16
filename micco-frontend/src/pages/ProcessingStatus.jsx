@@ -7,6 +7,7 @@ import {
     DOCUMENT_STATES,
     resolveDocumentState,
     getApprovalStageLabel,
+    isAwaitingApproval,
 } from '../utils/documentStatus';
 
 // Một tab cho mỗi trạng thái — khớp với STATUS_GROUPS ở
@@ -68,14 +69,17 @@ function StateStatCard({ state, count, isActive, onClick }) {
 function DocumentStatusRow({ doc }) {
     const state = resolveDocumentState(doc);
     const StateIcon = state.icon;
-    const isAwaitingApproval = state === DOCUMENT_STATES.awaiting_approval;
+    const isAwaiting = state === DOCUMENT_STATES.awaiting_approval;
     const isFailed = state === DOCUMENT_STATES.failed;
+    // Tài liệu lỗi TRƯỚC khi có cơ chế trả-về-hàng-đợi vẫn đang "approved";
+    // chỉ hướng dẫn duyệt lại khi tài liệu thật sự nằm trong hàng đợi.
+    const isBackInApprovalQueue = isFailed && isAwaitingApproval(doc.approval_status);
 
     return (
         <div className={`px-6 py-4 border-l-4 transition-colors ${
             isFailed
                 ? 'border-l-red-500 bg-red-50/40 dark:bg-red-500/5 hover:bg-red-50 dark:hover:bg-red-500/10'
-                : isAwaitingApproval
+                : isAwaiting
                 ? 'border-l-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-500/5'
                 : state === DOCUMENT_STATES.indexed
                 ? 'border-l-emerald-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
@@ -110,18 +114,14 @@ function DocumentStatusRow({ doc }) {
                 </div>
 
                 {/* Trạng thái */}
-                <div className="flex-shrink-0 w-80 flex justify-end">
-                    {isAwaitingApproval ? (
+                <div className="flex-shrink-0 w-80 flex justify-end overflow-hidden">
+                    {isAwaiting ? (
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${state.badge}`}>
                             <StateIcon className="w-3.5 h-3.5" />
                             {getApprovalStageLabel(doc.approval_status)}
                         </span>
                     ) : (
-                        <ProcessingProgressBar
-                            status={doc.status}
-                            chunkCount={doc.chunk_count}
-                            errorMessage={doc.error_message}
-                        />
+                        <ProcessingProgressBar status={doc.status} chunkCount={doc.chunk_count} />
                     )}
                 </div>
             </div>
@@ -136,7 +136,9 @@ function DocumentStatusRow({ doc }) {
                                 {doc.error_message || 'Xử lý tài liệu thất bại'}
                             </p>
                             <p className="text-xs text-red-500/80 dark:text-red-400/70 mt-1">
-                                Tài liệu đã được trả về {getApprovalStageLabel(doc.approval_status).toLowerCase()} — phê duyệt lại để xử lý lại.
+                                {isBackInApprovalQueue
+                                    ? `Tài liệu đã được trả về ${getApprovalStageLabel(doc.approval_status).toLowerCase()} — phê duyệt lại để xử lý lại.`
+                                    : 'Tài liệu dừng ở bước này và chưa được lập chỉ mục.'}
                             </p>
                         </div>
                     </div>

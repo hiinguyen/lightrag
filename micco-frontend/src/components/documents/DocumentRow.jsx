@@ -128,7 +128,6 @@ export default function DocumentRow({ doc, openMenu, onToggleMenu, onView, onDow
                             <ProcessingProgressBar
                                 status={processingStatus.status}
                                 chunkCount={processingStatus.chunk_count}
-                                errorMessage={processingStatus.error_message}
                                 compact
                             />
                         ) : (
@@ -140,8 +139,8 @@ export default function DocumentRow({ doc, openMenu, onToggleMenu, onView, onDow
                             </span>
                         )}
                         {state === DOCUMENT_STATES.failed && (
-                            <p className="text-[11px] text-red-500 dark:text-red-400/80 mt-1 line-clamp-2">
-                                {processingStatus?.error_message || doc.error_message || 'Xử lý thất bại — phê duyệt lại để thử lại.'}
+                            <p className="text-[11px] text-red-500 dark:text-red-400/80 mt-1 line-clamp-2 max-w-md" title={processingStatus?.error_message || doc.error_message || ''}>
+                                {processingStatus?.error_message || doc.error_message || 'Xử lý thất bại.'}
                             </p>
                         )}
                     </div>

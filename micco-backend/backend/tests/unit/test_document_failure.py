@@ -49,6 +49,13 @@ def test_describe_failure_timeout_returns_timeout_hint():
     assert "Quá thời gian xử lý" in describe_failure("Processing timeout (10min)")
 
 
+def test_describe_failure_missing_file_returns_missing_file_hint():
+    """Phrasing observed in a real run: the loader raises "File not found: <path>"."""
+    message = describe_failure(FileNotFoundError("File not found: /uploads/abc.md"))
+
+    assert "Không tìm thấy tệp tài liệu" in message
+
+
 def test_describe_failure_unknown_error_returns_generic_hint():
     assert "Xử lý tài liệu thất bại" in describe_failure(ValueError("weird crash"))
 

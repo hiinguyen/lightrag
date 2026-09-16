@@ -99,6 +99,13 @@ export function resolveDocumentState(doc) {
     return DOCUMENT_STATES.awaiting_approval;
 }
 
+const PENDING_APPROVAL_STAGES = ['pending', 'pending_dept', 'pending_org'];
+
+/** Tài liệu có đang nằm trong hàng đợi phê duyệt không. */
+export function isAwaitingApproval(approvalStatus) {
+    return PENDING_APPROVAL_STAGES.includes(String(approvalStatus || '').toLowerCase());
+}
+
 /** Nhãn chi tiết hơn cho tài liệu đang chờ duyệt (cấp phòng vs cấp tổ chức). */
 export function getApprovalStageLabel(approvalStatus) {
     if (approvalStatus === 'pending_org') return 'Chờ duyệt cấp tổ chức';

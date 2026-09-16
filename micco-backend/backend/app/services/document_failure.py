@@ -44,7 +44,7 @@ def describe_failure(error: BaseException | str) -> str:
         hint = "Hết bộ nhớ GPU khi xử lý tài liệu. Vui lòng thử lại khi máy chủ rảnh."
     elif "timeout" in lowered or "timed out" in lowered:
         hint = "Quá thời gian xử lý cho phép."
-    elif "no such file" in lowered or "not found on disk" in lowered:
+    elif "no such file" in lowered or "file not found" in lowered or "not found on disk" in lowered:
         hint = "Không tìm thấy tệp tài liệu trên máy chủ."
     else:
         hint = "Xử lý tài liệu thất bại."

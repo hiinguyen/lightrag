@@ -38,7 +38,6 @@ function DocumentStatusMeta({ doc, processingStatus }) {
             <ProcessingProgressBar
                 status={processingStatus.status}
                 chunkCount={processingStatus.chunk_count}
-                errorMessage={processingStatus.error_message}
                 compact
             />
         );
@@ -47,16 +46,16 @@ function DocumentStatusMeta({ doc, processingStatus }) {
     const errorMessage = processingStatus?.error_message || doc?.error_message;
 
     return (
-        <div className="flex flex-col items-end gap-1">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${state.badge}`}>
-                <StateIcon className={`w-3 h-3 ${state.spin ? 'animate-spin' : ''}`} />
+        <div className="flex flex-col items-end gap-1 min-w-0">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${state.badge}`}>
+                <StateIcon className={`w-3 h-3 flex-shrink-0 ${state.spin ? 'animate-spin' : ''}`} />
                 {state === DOCUMENT_STATES.awaiting_approval
                     ? getApprovalStageLabel(doc?.approval_status)
                     : state.label}
             </span>
             {state === DOCUMENT_STATES.failed && (
-                <p className="text-[11px] text-red-500 dark:text-red-400/80 text-right">
-                    {errorMessage || 'Xử lý thất bại — phê duyệt lại để thử lại.'}
+                <p className="text-[11px] text-red-500 dark:text-red-400/80 text-right line-clamp-3" title={errorMessage || ''}>
+                    {errorMessage || 'Xử lý thất bại.'}
                 </p>
             )}
         </div>
@@ -67,7 +66,9 @@ function MetaRow({ label, value }) {
     return (
         <div className="flex items-start justify-between gap-4 text-xs">
             <span className="text-slate-400 shrink-0">{label}</span>
-            <span className="font-medium text-slate-800 dark:text-slate-200 text-right">{value}</span>
+            {/* min-w-0 + break-words: giá trị có thể dài (vd. thông báo lỗi CUDA)
+                và không được tràn ra ngoài panel thông tin. */}
+            <span className="font-medium text-slate-800 dark:text-slate-200 text-right min-w-0 break-words">{value}</span>
         </div>
     );
 }

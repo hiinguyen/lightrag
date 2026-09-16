@@ -12,13 +12,15 @@ import {
  *
  * Nhãn và màu lấy từ utils/documentStatus.js để mọi trang nói cùng một ngôn ngữ.
  *
+ * Chỉ hiện nhãn trạng thái ngắn — lý do lỗi do nơi gọi hiển thị riêng, vì thanh
+ * này nằm trong cột hẹp còn thông báo lỗi (vd. CUDA OOM) dài hàng trăm ký tự.
+ *
  * Props:
  *   status       — 'parsing' | 'processing' | 'indexing' | 'indexed' | 'failed'
  *   chunkCount   — number (optional)
- *   errorMessage — string (optional)
  *   compact      — boolean: render nhỏ gọn hơn khi nằm trong danh sách
  */
-export default function ProcessingProgressBar({ status, chunkCount, errorMessage, compact = false }) {
+export default function ProcessingProgressBar({ status, chunkCount, compact = false }) {
     const state = resolveDocumentState({ status, approval_status: 'approved' });
     const isDone = state === DOCUMENT_STATES.indexed;
     const isFailed = state === DOCUMENT_STATES.failed;
@@ -32,9 +34,9 @@ export default function ProcessingProgressBar({ status, chunkCount, errorMessage
     const labelIconSize = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
 
     return (
-        <div className={`flex items-center gap-3 ${compact ? 'mt-1' : 'mt-2'}`}>
+        <div className={`flex items-center gap-3 min-w-0 ${compact ? 'mt-1' : 'mt-2'}`}>
             {/* Các bước pipeline */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-shrink-0">
                 {PIPELINE_STEPS.map((step, i) => {
                     const isActive = i === currentStepIdx;
                     const isPast = isDone || (currentStepIdx > -1 && i < currentStepIdx);
@@ -86,7 +88,7 @@ export default function ProcessingProgressBar({ status, chunkCount, errorMessage
                     {isDone
                         ? `${state.label}${chunkCount ? ` · ${chunkCount} chunks` : ''}`
                         : isFailed
-                        ? `${state.label}: ${errorMessage || 'Xử lý thất bại'}`
+                        ? state.label
                         : `${getPipelineStepLabel(status)}${chunkCount > 0 ? ` · ${chunkCount} chunks` : ''}`}
                 </span>
             </div>
