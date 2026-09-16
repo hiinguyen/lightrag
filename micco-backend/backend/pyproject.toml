@@ -3,7 +3,9 @@ name = "nexusrag-backend"
 version = "0.1.0"
 description = "NexusRAG — Knowledge Base + RAG Backend"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "markdown>=3.10.3",
+]
 
 [build-system]
 requires = ["hatchling"]
