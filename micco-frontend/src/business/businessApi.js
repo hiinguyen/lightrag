@@ -104,6 +104,10 @@ export const businessChatApi = {
 
     /** DELETE /chat/history → {deleted} */
     clearHistory: () => request('/chat/history', { method: 'DELETE' }),
+
+    /** POST /leads → {id, created_at} — confirm a chat-proposed lead draft */
+    createLead: (summary, packageIds) =>
+        request('/leads', { method: 'POST', body: { summary, package_ids: packageIds } }),
 };
 
 /**
@@ -119,7 +123,7 @@ export const businessChatApi = {
  */
 export async function streamBusinessChat(message, handlers = {}) {
     const {
-        onStatus, onSources, onDelta, onRecommendations, onComplete, onError,
+        onStatus, onSources, onDelta, onRecommendations, onLeadPrompt, onComplete, onError,
     } = handlers;
 
     let response;
@@ -171,9 +175,11 @@ export async function streamBusinessChat(message, handlers = {}) {
                     case 'error':
                         onError?.(new BusinessApiError(chunk.message || 'Đã xảy ra lỗi', 0));
                         break;
+                    case 'lead_prompt':
+                        onLeadPrompt?.({ summary: chunk.summary || '', packages: chunk.packages || [] });
+                        break;
                     default:
-                        // Phase 5 adds `lead_prompt`. Unknown events are
-                        // ignored, never shown.
+                        // Unknown events are ignored, never shown.
                         break;
                 }
             },
