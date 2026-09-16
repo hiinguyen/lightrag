@@ -51,6 +51,7 @@ export default function BusinessChatPage() {
                         content: m.content,
                         sources: m.sources || [],
                         recommendations: m.recommendations || [],
+                        leadPrompt: null,
                     })),
                 );
             })
@@ -98,6 +99,7 @@ export default function BusinessChatPage() {
                 content: '',
                 sources: [],
                 recommendations: [],
+                leadPrompt: null,
                 status: 'Đang gửi câu hỏi',
             },
         ]);
@@ -110,6 +112,7 @@ export default function BusinessChatPage() {
                 status: '',
             })),
             onRecommendations: (packages) => updateLast(() => ({ recommendations: packages })),
+            onLeadPrompt: (payload) => updateLast(() => ({ leadPrompt: payload })),
             onComplete: (payload) => updateLast(() => ({
                 content: payload.answer,
                 sources: payload.sources || [],
