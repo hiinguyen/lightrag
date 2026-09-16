@@ -71,14 +71,28 @@ SUGGESTION_CONTRACT = """Cách gợi ý gói:
 - Khi khách hỏi một câu cụ thể đã có câu trả lời rõ trong "NGUỒN THAM KHẢO", **không** phát dòng đó.
 - Dòng đó là tín hiệu cho hệ thống, không phải câu văn. Không giải thích nó, không nhắc tới nó, không viết gì sau nó."""
 
+# Contract for the lead-handoff sentinel. Always included — unlike
+# SUGGESTION_CONTRACT, this does not depend on the catalogue having rows: a
+# customer can want a contract without naming a specific package.
+#
+# The sentinel travels down the same stream as the prose, so it is stripped
+# before display by LeadSentinelFilter (app/services/business_lead_sentinel.py).
+LEAD_CONTRACT = """Cách chuyển yêu cầu cho đội kinh doanh:
+
+- Khi khách thể hiện ý định **mua/đặt hàng/ký hợp đồng** rõ ràng (không chỉ hỏi thông tin), trả lời như bình thường rồi kết thúc câu trả lời bằng đúng một dòng cuối theo mẫu:
+  [[LEAD: id1,id2|tóm tắt ngắn gọn nhu cầu của khách, kèm ngân sách nếu khách có nêu]]
+  Để trống trước dấu | nếu không có gói cụ thể nào liên quan.
+- Không dùng dòng này cùng lúc với dòng gợi ý gói — chỉ chọn một trong hai, hoặc không dòng nào nếu khách chỉ đang hỏi thông tin. Gợi ý gói dùng khi nhu cầu còn rộng; dòng này dùng khi ý định mua/ký đã rõ.
+- Dòng đó là tín hiệu cho hệ thống, không phải câu văn. Không giải thích nó, không nhắc tới nó, không viết gì sau nó."""
+
 
 def build_business_system_prompt(context: str, catalog_digest: str = "") -> str:
     """Assemble the portal system prompt around the retrieved context.
 
-    Order is: persona, retrieved context, catalogue and its contract,
-    guardrail. The guardrail goes last on purpose — see the module docstring
-    — so neither document text nor a package name written by an Admin can be
-    read as an instruction that overrides the rules.
+    Order is: persona, retrieved context, catalogue and its contract, lead
+    contract, guardrail. The guardrail goes last on purpose — see the module
+    docstring — so neither document text nor a package name written by an
+    Admin can be read as an instruction that overrides the rules.
     """
     parts = [
         BUSINESS_SYSTEM_PROMPT,
@@ -86,5 +100,6 @@ def build_business_system_prompt(context: str, catalog_digest: str = "") -> str:
     ]
     if catalog_digest:
         parts.append(f"{CATALOG_HEADING}\n{catalog_digest}\n\n{SUGGESTION_CONTRACT}")
+    parts.append(LEAD_CONTRACT)
     parts.append(BUSINESS_HARD_GUARDRAIL)
     return "\n\n".join(parts)

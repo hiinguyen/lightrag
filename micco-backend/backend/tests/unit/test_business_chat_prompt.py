@@ -73,3 +73,25 @@ def test_the_two_fixed_answers_are_distinct():
     question simply is not covered.
     """
     assert OUT_OF_SCOPE_ANSWER != NO_PUBLISHED_CONTENT_ANSWER
+
+
+from app.api.business_chat_prompt import LEAD_CONTRACT
+
+
+def test_lead_contract_is_always_in_the_prompt_even_without_a_catalogue():
+    """Unlike SUGGESTION_CONTRACT, the lead sentinel has nothing to do with
+    the catalogue existing — a customer can want a contract with no specific
+    package in mind."""
+    prompt = build_business_system_prompt("noi dung tai lieu")
+
+    assert LEAD_CONTRACT in prompt
+
+
+def test_lead_contract_comes_before_the_guardrail():
+    prompt = build_business_system_prompt("noi dung tai lieu", "danh muc")
+
+    assert prompt.index(LEAD_CONTRACT) < prompt.index(BUSINESS_HARD_GUARDRAIL)
+
+
+def test_lead_contract_mentions_the_sentinel_marker():
+    assert "[[LEAD:" in LEAD_CONTRACT
