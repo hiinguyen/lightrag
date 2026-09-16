@@ -13,7 +13,8 @@ import { AlertCircle, Loader2, Send } from 'lucide-react';
 import { businessChatApi } from './businessApi';
 
 export default function BusinessLeadPrompt({ summary, packages }) {
-    const [status, setStatus] = useState('idle'); // idle | sending | sent | dismissed | error
+    // idle | sending | sent | dismissed | error | session-expired
+    const [status, setStatus] = useState('idle');
 
     if (!summary || status === 'dismissed') return null;
 
@@ -22,8 +23,14 @@ export default function BusinessLeadPrompt({ summary, packages }) {
         try {
             await businessChatApi.createLead(summary, (packages || []).map((p) => p.id));
             setStatus('sent');
-        } catch {
-            setStatus('error');
+        } catch (error) {
+            // request() already cleared the stored token on a 401/403 — the
+            // customer needs to log in again, not just retry the same click.
+            if (error?.status === 401 || error?.status === 403) {
+                setStatus('session-expired');
+            } else {
+                setStatus('error');
+            }
         }
     };
 
@@ -79,6 +86,13 @@ export default function BusinessLeadPrompt({ summary, packages }) {
                 <p role="alert" className="mt-2 flex items-center gap-1.5 text-xs text-[var(--p-danger)]">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     Không gửi được, vui lòng thử lại.
+                </p>
+            )}
+
+            {status === 'session-expired' && (
+                <p role="alert" className="mt-2 flex items-center gap-1.5 text-xs text-[var(--p-danger)]">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại để gửi yêu cầu.
                 </p>
             )}
         </section>
