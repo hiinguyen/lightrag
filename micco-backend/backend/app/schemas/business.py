@@ -133,3 +133,22 @@ class BusinessChatHistoryData(BaseModel):
 
 class BusinessChatCleared(BaseModel):
     deleted: int = 0
+
+
+# ─── Lead handoff (Phase 5) ─────────────────────────────────────────
+# The customer's confirmation of a chat-proposed [[LEAD:...]] draft (see
+# app.services.business_lead_sentinel). extra="forbid" for the same reason as
+# BusinessChatRequest: nothing about who is sending this or when is meant to
+# come from the client.
+
+
+class BusinessLeadCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(..., min_length=1, max_length=1000)
+    package_ids: list[int] = Field(default_factory=list)
+
+
+class BusinessLeadCreated(BaseModel):
+    id: int
+    created_at: datetime
