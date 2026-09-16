@@ -98,3 +98,60 @@ async def notify_document_uploaded(document_id: int) -> None:
         logger.info(f"n8n webhook: document {document_id} notified successfully (status {response.status_code})")
     except Exception as e:
         logger.warning(f"n8n webhook call failed for document {document_id}: {e}")
+
+
+async def notify_lead_created(lead_id: int) -> None:
+    """Post a lead.created event to the configured n8n webhook.
+
+    Same event type as notify_document_uploaded (this is the same n8n
+    instance, discriminated by the "event" field) — no new secret or URL.
+    """
+    if not settings.N8N_WEBHOOK_URL:
+        logger.info(
+            f"n8n webhook: N8N_WEBHOOK_URL not configured, skipping notify for lead {lead_id}"
+        )
+        return
+
+    try:
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.models.business_lead import BusinessLead
+        from app.models.business_package import BusinessPackage
+
+        async with async_session_maker() as db:
+            result = await db.execute(select(BusinessLead).where(BusinessLead.id == lead_id))
+            lead = result.scalar_one_or_none()
+            if lead is None:
+                logger.warning(f"n8n webhook: lead {lead_id} not found, skipping notify")
+                return
+
+            packages: list[dict] = []
+            if lead.package_ids:
+                pkg_result = await db.execute(
+                    select(BusinessPackage).where(BusinessPackage.id.in_(lead.package_ids))
+                )
+                packages = [{"id": p.id, "name": p.name} for p in pkg_result.scalars().all()]
+
+            payload = {
+                "event": "lead.created",
+                "lead": {
+                    "id": lead.id,
+                    "company_name": lead.company_name,
+                    "contact_phone": lead.contact_phone,
+                    "contact_email": lead.contact_email,
+                    "summary": lead.summary,
+                    "packages": packages,
+                    "created_at": lead.created_at.isoformat() if lead.created_at else None,
+                },
+            }
+
+        logger.info(f"n8n webhook: notifying lead.created for lead {lead_id} -> {settings.N8N_WEBHOOK_URL}")
+
+        async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT_SECONDS) as client:
+            response = await client.post(settings.N8N_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+
+        logger.info(f"n8n webhook: lead {lead_id} notified successfully (status {response.status_code})")
+    except Exception as e:
+        logger.warning(f"n8n webhook call failed for lead {lead_id}: {e}")

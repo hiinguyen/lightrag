@@ -269,3 +269,131 @@ async def test_notify_document_uploaded_swallows_http_errors(monkeypatch):
 
     # Must not raise even though the webhook responds with an error.
     await n8n_webhook.notify_document_uploaded(document.id)
+
+
+from app.models.business_lead import BusinessLead
+from app.models.business_package import BusinessPackage
+
+
+class _FakePackageScalars:
+    def __init__(self, packages):
+        self._packages = packages
+
+    def all(self):
+        return self._packages
+
+
+class _FakePackageResult:
+    def __init__(self, packages):
+        self._packages = packages
+
+    def scalars(self):
+        return _FakePackageScalars(self._packages)
+
+
+class _FakeLeadDb:
+    """Dispatches select(BusinessLead)/select(BusinessPackage) to fixtures."""
+
+    def __init__(self, lead=None, packages=None):
+        self._lead = lead
+        self._packages = packages or []
+
+    async def execute(self, stmt):
+        target = stmt.column_descriptions[0]["type"]
+        if target is BusinessLead:
+            return _FakeResult(self._lead)
+        if target is BusinessPackage:
+            return _FakePackageResult(self._packages)
+        return _FakeResult(None)
+
+
+def _patch_lead_db(monkeypatch, lead=None, packages=None):
+    fake_db = _FakeLeadDb(lead=lead, packages=packages)
+    monkeypatch.setattr(
+        "app.core.database.async_session_maker", lambda: _FakeSessionCM(fake_db)
+    )
+    return fake_db
+
+
+def _fake_lead(**overrides) -> SimpleNamespace:
+    defaults = dict(
+        id=5,
+        company_name="Cong ty TNHH Test",
+        contact_phone="0900000000",
+        contact_email="business@example.test",
+        summary="Cần 200 tấn anfo, ngân sách khoảng 200 triệu",
+        package_ids=[1],
+        created_at=None,
+    )
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _fake_package(**overrides) -> SimpleNamespace:
+    defaults = dict(id=1, name="Cung ứng thuốc nổ")
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+async def test_notify_lead_created_noop_when_url_not_configured(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "")
+
+    await n8n_webhook.notify_lead_created(5)
+
+    assert _FakeAsyncClient.last_instance is None
+
+
+async def test_notify_lead_created_skips_when_lead_missing(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    _patch_lead_db(monkeypatch, lead=None)
+
+    await n8n_webhook.notify_lead_created(999)
+
+    assert _FakeAsyncClient.last_instance is None
+
+
+async def test_notify_lead_created_posts_expected_payload(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    lead = _fake_lead()
+    package = _fake_package()
+    _patch_lead_db(monkeypatch, lead=lead, packages=[package])
+
+    await n8n_webhook.notify_lead_created(lead.id)
+
+    client = _FakeAsyncClient.last_instance
+    assert client is not None
+    url, payload = client.posted[0]
+    assert url == "https://example.test/webhook"
+    assert payload["event"] == "lead.created"
+    assert payload["lead"]["id"] == lead.id
+    assert payload["lead"]["company_name"] == "Cong ty TNHH Test"
+    assert payload["lead"]["contact_email"] == "business@example.test"
+    assert payload["lead"]["summary"] == lead.summary
+    assert payload["lead"]["packages"] == [{"id": 1, "name": "Cung ứng thuốc nổ"}]
+
+
+async def test_notify_lead_created_with_no_packages(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    lead = _fake_lead(package_ids=[])
+    _patch_lead_db(monkeypatch, lead=lead, packages=[])
+
+    await n8n_webhook.notify_lead_created(lead.id)
+
+    _, payload = _FakeAsyncClient.last_instance.posted[0]
+    assert payload["lead"]["packages"] == []
+
+
+async def test_notify_lead_created_swallows_http_errors(monkeypatch):
+    monkeypatch.setattr(n8n_webhook.settings, "N8N_WEBHOOK_URL", "https://example.test/webhook")
+    lead = _fake_lead()
+    _patch_lead_db(monkeypatch, lead=lead, packages=[])
+
+    class _FailingClient(_FakeAsyncClient):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.response = _FakeResponse(status_code=500)
+
+    monkeypatch.setattr(n8n_webhook.httpx, "AsyncClient", _FailingClient)
+
+    # Must not raise even though the webhook responds with an error.
+    await n8n_webhook.notify_lead_created(lead.id)
