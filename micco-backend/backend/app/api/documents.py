@@ -281,6 +281,7 @@ async def _finalize_approval_and_ingest(
         get_or_create_default_workspace,
         get_or_create_department_workspace,
     )
+    from app.services.business_rag import BUSINESS_AUDIENCE
 
     result = await db.execute(
         sa_update(Document)
@@ -300,7 +301,21 @@ async def _finalize_approval_and_ingest(
 
     file_path = str(UPLOAD_DIR / document.filename)
 
-    if document.department_id:
+    # Approval normally promotes a document out of wherever it was uploaded and
+    # into the department (or default) workspace. The workspace serving the
+    # customer portal is the exception: an Admin put the document there on
+    # purpose, only documents living there can be published, and moving it out
+    # would make the publish step reject it as "not in the business workspace".
+    current_ws = (
+        await db.get(KnowledgeBase, document.workspace_id)
+        if document.workspace_id
+        else None
+    )
+    stays_put = current_ws is not None and current_ws.audience == BUSINESS_AUDIENCE
+
+    if stays_put:
+        target_ws = current_ws
+    elif document.department_id:
         target_ws = await get_or_create_department_workspace(db, document.department_id)
     else:
         target_ws = await get_or_create_default_workspace(db)
@@ -310,7 +325,10 @@ async def _finalize_approval_and_ingest(
 
     background_tasks.add_task(process_document_background, document.id, file_path, target_ws.id)
 
-    if document.visibility == "public":
+    # The public fan-out copies a document into every department workspace. That
+    # is for internal reach; a customer-facing document has no business being
+    # ingested into internal workspaces and their knowledge graphs.
+    if document.visibility == "public" and not stays_put:
         other_workspaces = await get_all_department_workspaces(db)
         for other_ws in other_workspaces:
             if other_ws.id != target_ws.id:
