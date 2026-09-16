@@ -338,9 +338,38 @@ async def approve_document(
         raise HTTPException(status_code=400, detail="Tài liệu không ở trạng thái chờ duyệt")
 
     from app.api.documents import _finalize_approval_and_ingest
-    await _finalize_approval_and_ingest(db, doc, background_tasks)
+    started = await _finalize_approval_and_ingest(db, doc, background_tasks)
+    if started is not None:
+        return {
+            "message": "Đã phê duyệt và đang bắt đầu xử lý",
+            "id": doc_id,
+            "processing_started": True,
+        }
 
-    return {"message": "Đã phê duyệt và đang bắt đầu xử lý", "id": doc_id, "processing_started": True}
+    # _finalize_approval_and_ingest only acts on PENDING/FAILED rows, so it
+    # wrote nothing here. Reporting "đã phê duyệt" anyway used to leave the
+    # document pending forever — and the business portal then refuses to
+    # publish it, with no way out from the UI.
+    if doc.status == DocumentStatus.INDEXED:
+        # The content is already indexed (a reprocess ran after the failure
+        # that sent this document back to the queue). Record the approval the
+        # approver just gave, but do not ingest the same file a second time.
+        doc.approval_status = "approved"
+        doc.error_message = None
+        await db.commit()
+        return {
+            "message": "Đã phê duyệt. Tài liệu đã index xong nên không xử lý lại.",
+            "id": doc_id,
+            "processing_started": False,
+        }
+
+    # Still mid-ingestion: another call already started it. Leave it alone and
+    # say so rather than claiming a restart that did not happen.
+    return {
+        "message": "Tài liệu đang được xử lý, không cần duyệt lại.",
+        "id": doc_id,
+        "processing_started": False,
+    }
 
 
 @router.post("/documents/{doc_id}/reject")

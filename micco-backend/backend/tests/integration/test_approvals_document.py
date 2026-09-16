@@ -126,3 +126,81 @@ async def test_approve_after_failed_ingest_restarts_processing(
     assert doc.approval_status == "approved"
     assert doc.status == DocumentStatus.PROCESSING
     assert doc.error_message is None
+
+
+async def test_approve_indexed_document_records_approval_without_reingesting(
+    approvals_client: AsyncClient,
+    admin_user,
+    make_workspace,
+    make_document,
+    monkeypatch,
+    test_db,
+):
+    """An already-indexed document still gets its approval written down.
+
+    A crashed ingestion hands the document back to the approval queue
+    (app.services.document_failure), but the retry can also come from the
+    reprocess endpoint, which leaves the row INDEXED while it is still pending.
+    _finalize_approval_and_ingest only touches PENDING/FAILED rows, so it does
+    nothing here — and the endpoint used to report "đã phê duyệt" anyway,
+    leaving a document that is indexed, forever pending, and impossible to
+    publish to the business portal.
+    """
+    recorder = _RecordingIngest()
+    monkeypatch.setattr(documents_module, "process_document_background", recorder)
+
+    workspace = await make_workspace(name="KB Indexed Approve Test")
+    doc = await make_document(
+        workspace_id=workspace.id,
+        status=DocumentStatus.INDEXED,
+        approval_status="pending",
+        visibility="internal",
+    )
+
+    from app.core.security import create_access_token
+
+    token = create_access_token(data={"sub": admin_user.id})
+    approvals_client.headers.update({"Authorization": f"Bearer {token}"})
+
+    response = await approvals_client.post(APPROVE_URL.format(doc_id=doc.id))
+
+    assert response.status_code == 200
+    # Nothing to re-ingest: the content is already in the index.
+    assert response.json()["processing_started"] is False
+    assert recorder.calls == []
+
+    await test_db.refresh(doc)
+    assert doc.approval_status == "approved"
+    assert doc.status == DocumentStatus.INDEXED
+
+
+async def test_approve_document_already_being_processed_reports_no_restart(
+    approvals_client: AsyncClient,
+    admin_user,
+    make_workspace,
+    make_document,
+    monkeypatch,
+    test_db,
+):
+    """A document mid-ingestion is not restarted, and the response says so."""
+    recorder = _RecordingIngest()
+    monkeypatch.setattr(documents_module, "process_document_background", recorder)
+
+    workspace = await make_workspace(name="KB In Flight Approve Test")
+    doc = await make_document(
+        workspace_id=workspace.id,
+        status=DocumentStatus.PROCESSING,
+        approval_status="pending",
+        visibility="internal",
+    )
+
+    from app.core.security import create_access_token
+
+    token = create_access_token(data={"sub": admin_user.id})
+    approvals_client.headers.update({"Authorization": f"Bearer {token}"})
+
+    response = await approvals_client.post(APPROVE_URL.format(doc_id=doc.id))
+
+    assert response.status_code == 200
+    assert response.json()["processing_started"] is False
+    assert recorder.calls == []
