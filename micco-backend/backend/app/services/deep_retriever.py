@@ -36,6 +36,12 @@ from app.services.models.parsed_document import (
 
 logger = logging.getLogger(__name__)
 
+# Floor on how many chunks reach the LLM after threshold filtering. Below this
+# an answer is being written from a single passage, which is how a question the
+# documents do answer comes back as "not in the documents" — see
+# DeepRetriever._rerank_chunks.
+MIN_CONTEXT_CHUNKS = 3
+
 
 class DeepRetriever:
     """
@@ -231,8 +237,17 @@ class DeepRetriever:
         top_k: int,
     ) -> tuple[list[EnrichedChunk], list[Citation]]:
         """
-        Cross-encoder reranking: score each (query, chunk) pair jointly,
-        then filter by relevance threshold and return top_k.
+        Cross-encoder reranking: score each (query, chunk) pair jointly, then
+        filter by relevance threshold — but never below MIN_CONTEXT_CHUNKS.
+
+        The threshold is a precision filter, not a correctness guarantee. Cohere
+        scores on Vietnamese business documents come out bimodal (~0.99 when a
+        passage clearly answers the question, ~0.01 otherwise), so a mid-range
+        threshold usually leaves exactly one survivor. One chunk is too thin to
+        answer from, and when that survivor is the off-topic one, the passage
+        that does answer gets discarded while sitting just under the cut.
+        Topping up by rerank rank keeps the reranker's judgement without letting
+        it starve the context.
         """
         if not chunks:
             return [], []
@@ -240,20 +255,25 @@ class DeepRetriever:
         # Extract texts for reranking
         doc_texts = [c.content for c in chunks]
 
-        reranked = self.reranker.rerank(
+        # Score without the threshold, so the top-up below has candidates to
+        # draw from; the threshold is applied here instead.
+        scored = self.reranker.rerank(
             query=question,
             documents=doc_texts,
             top_k=top_k,
-            min_score=settings.NEXUSRAG_MIN_RELEVANCE_SCORE,
+            min_score=None,
         )
+        if not scored:
+            return [], []
 
-        if not reranked:
-            # Fallback: if reranker filtered everything, keep top 3 by original order
+        reranked = [r for r in scored if r.score >= settings.NEXUSRAG_MIN_RELEVANCE_SCORE]
+        if len(reranked) < MIN_CONTEXT_CHUNKS:
             logger.warning(
-                f"Reranker filtered all {len(chunks)} chunks below threshold "
-                f"{settings.NEXUSRAG_MIN_RELEVANCE_SCORE}, falling back to top 3"
+                f"Only {len(reranked)} of {len(chunks)} chunks cleared threshold "
+                f"{settings.NEXUSRAG_MIN_RELEVANCE_SCORE}; topping up to "
+                f"{MIN_CONTEXT_CHUNKS} by rerank order"
             )
-            return chunks[:min(3, len(chunks))], citations[:min(3, len(citations))]
+            reranked = scored[:MIN_CONTEXT_CHUNKS]
 
         # Map reranked results back to original chunks/citations
         reranked_chunks = [chunks[r.index] for r in reranked]
