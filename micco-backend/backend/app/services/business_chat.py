@@ -40,6 +40,7 @@ from app.services.business_packages import (
     resolve_recommendations,
     to_card,
 )
+from app.services.business_lead_sentinel import LeadSentinelFilter
 from app.services.business_rag import business_search, get_business_workspace
 from app.services.business_recommendation import RecommendationSentinelFilter
 from app.services.llm import get_llm_provider
@@ -223,16 +224,20 @@ async def stream_business_chat(
     )
 
     provider = get_llm_provider()
-    sentinel = RecommendationSentinelFilter()
+    recommendation_sentinel = RecommendationSentinelFilter()
+    lead_sentinel = LeadSentinelFilter()
     parts: list[str] = []
     failed = False
 
     try:
         async for text in _stream_answer(provider, system_prompt, history, question):
-            # Filtered before it is ever yielded: the sentinel must not reach
-            # the screen even for one frame, and a chunk boundary can fall in
-            # the middle of it.
-            visible = sentinel.feed(text)
+            # Two independent filters, chained: each is responsible only for
+            # not letting its own marker reach the screen. Chaining them is
+            # safe even if the markers share a "[[" prefix, because the
+            # second filter re-buffers whatever the first one lets through —
+            # see the design spec for why this composes correctly.
+            after_recommendation = recommendation_sentinel.feed(text)
+            visible = lead_sentinel.feed(after_recommendation)
             if visible:
                 parts.append(visible)
                 yield ("delta", {"text": visible})
@@ -240,7 +245,12 @@ async def stream_business_chat(
         logger.exception("business chat: LLM streaming failed")
         failed = True
 
-    trailing, suggested_ids = sentinel.finish()
+    reco_trailing, suggested_ids = recommendation_sentinel.finish()
+    # Text released by the first filter at finish() has never been through
+    # the second filter yet — it still needs to be checked and buffered.
+    visible_trailing = lead_sentinel.feed(reco_trailing)
+    lead_trailing, lead_draft = lead_sentinel.finish()
+    trailing = visible_trailing + lead_trailing
     if trailing:
         parts.append(trailing)
         yield ("delta", {"text": trailing})
@@ -262,6 +272,14 @@ async def stream_business_chat(
     cards = [to_card(p) for p in resolve_recommendations(suggested_ids, packages)]
     if cards:
         yield ("recommendations", {"packages": cards})
+
+    # A lead proposal is ephemeral: shown once during this live stream only,
+    # never persisted and never repeated in the complete/history payloads. If
+    # the customer reloads before confirming, the draft is gone — they simply
+    # ask again.
+    if lead_draft is not None:
+        lead_cards = [to_card(p) for p in resolve_recommendations(lead_draft.package_ids, packages)]
+        yield ("lead_prompt", {"summary": lead_draft.summary, "packages": lead_cards})
 
     message_id = await _persist(
         db, workspace.id, user.id, "assistant", answer, sources, cards

@@ -12,6 +12,8 @@ SSE events emitted by POST /stream:
   - status:   {"step": str, "detail": str}
   - sources:  {"sources": [{"label": str, "page_no": int}]}
   - delta:    {"text": str}
+  - recommendations: {"packages": [BusinessPackageCard, ...]}
+  - lead_prompt: {"summary": str, "packages": [BusinessPackageCard, ...]}
   - complete: {"message_id": str, "answer": str, "sources": [...]}
   - error:    {"message": str}
 """
