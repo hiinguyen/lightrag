@@ -142,6 +142,9 @@ def map_rag_doc_to_legacy(doc: Any, owner_name: str = "System") -> dict[str, Any
         "approval_status": getattr(doc, "approval_status", "approved"),
         "approval_note": getattr(doc, "approval_note", None),
         "status": doc.status.value if hasattr(doc.status, "value") else doc.status,
+        # Lý do thất bại — danh sách tài liệu hiển thị ngay dưới badge "Xử lý lỗi"
+        # nên không cần mở trang chi tiết mới biết tài liệu hỏng vì gì.
+        "error_message": getattr(doc, "error_message", None),
         # Extra RBAC fields for frontend
         "uploader_id": getattr(doc, "uploader_id", None),
         "department_id": getattr(doc, "department_id", None),
@@ -172,6 +175,9 @@ def map_rag_doc_to_legacy_with_dept(
         "approval_status": getattr(doc, "approval_status", "approved"),
         "approval_note": getattr(doc, "approval_note", None),
         "status": doc.status.value if hasattr(doc.status, "value") else doc.status,
+        # Lý do thất bại — danh sách tài liệu hiển thị ngay dưới badge "Xử lý lỗi"
+        # nên không cần mở trang chi tiết mới biết tài liệu hỏng vì gì.
+        "error_message": getattr(doc, "error_message", None),
         # Extra RBAC fields for frontend
         "uploader_id": getattr(doc, "uploader_id", None),
         "department_id": getattr(doc, "department_id", None),

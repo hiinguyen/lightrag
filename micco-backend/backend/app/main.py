@@ -12,7 +12,7 @@ import logging
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import text, update
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import engine, Base
@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI):
 
         # Recover stale processing documents (stuck from previous runs)
         from app.models.document import Document, DocumentStatus
+        from app.services.document_failure import mark_document_failed
         from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy import select as sa_select
         async with AsyncSession(engine) as session:
@@ -138,22 +139,22 @@ async def lifespan(app: FastAPI):
                 DocumentStatus.PARSING,
                 DocumentStatus.INDEXING,
             ]
-            result = await session.execute(
-                update(Document)
-                .where(
+            stale_result = await session.execute(
+                sa_select(Document).where(
                     Document.status.in_(stale_statuses),
                     Document.updated_at < cutoff,
                 )
-                .values(
-                    status=DocumentStatus.FAILED,
-                    error_message=f"Processing timeout ({timeout}min). Click Analyze to retry.",
-                )
-                .returning(Document.id)
             )
-            stale_ids = [row[0] for row in result.fetchall()]
-            if stale_ids:
-                await session.commit()
-                logger.warning(f"Recovered {len(stale_ids)} stale documents: {stale_ids}")
+            stale_documents = stale_result.scalars().all()
+            for stale_document in stale_documents:
+                await mark_document_failed(
+                    session, stale_document, f"Processing timeout ({timeout}min)"
+                )
+            if stale_documents:
+                logger.warning(
+                    f"Recovered {len(stale_documents)} stale documents: "
+                    f"{[d.id for d in stale_documents]}"
+                )
     else:
         logger.info("AUTO_CREATE_TABLES=false — skipping auto-migration")
     yield

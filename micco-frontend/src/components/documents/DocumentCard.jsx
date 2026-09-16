@@ -1,8 +1,13 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { File, Eye, Download, Share2, Trash2, MoreVertical, Clock, XCircle, Loader2 } from 'lucide-react';
-import { fileTypeIconMap, fileTypeColors, fileTypeBgColors, thumbnailBg } from './fileTypes';
-import { getExt, formatDate, getCategoryLabel } from '../../utils/formatters';
+import { File, Eye, Download, Share2, Trash2, MoreVertical } from 'lucide-react';
+import { fileTypeIconMap, fileTypeColors, fileTypeBgColors } from './fileTypes';
+import { getExt, formatDate } from '../../utils/formatters';
+import {
+    DOCUMENT_STATES,
+    resolveDocumentState,
+    getApprovalStageLabel,
+} from '../../utils/documentStatus';
 
 /* ─── Portal Dropdown (same pattern as DocumentRow) ─── */
 function CardDropdown({ anchorEl, onClose, children }) {
@@ -79,10 +84,16 @@ export default function DocumentCard({ doc, onView, onDownload, onDelete }) {
 
     const [menuOpen, setMenuOpen] = useState(false);
     const menuBtnRef = useRef(null);
+    const state = resolveDocumentState(doc);
+    const StateIcon = state.icon;
 
     return (
         <div
-            className="group bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col"
+            className={`group bg-white dark:bg-gray-900 rounded-2xl border overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col ${
+                state === DOCUMENT_STATES.failed
+                    ? 'border-red-200 dark:border-red-500/40'
+                    : 'border-gray-100 dark:border-gray-800'
+            }`}
             onClick={() => onView(doc)}
         >
             {/* ── Thumbnail ── */}
@@ -132,21 +143,12 @@ export default function DocumentCard({ doc, onView, onDownload, onDelete }) {
                         )}
                     </div>
                 )}
-                {doc.approval_status === 'pending' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
-                        <Clock className="w-3 h-3" /> Chờ duyệt
-                    </span>
-                )}
-                {doc.approval_status === 'rejected' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-red-500 dark:text-red-400 mt-0.5">
-                        <XCircle className="w-3 h-3" /> Từ chối
-                    </span>
-                )}
-                {doc.approval_status === 'approved' && ['parsing', 'processing', 'indexing'].includes(doc.status) && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-primary-500 dark:text-primary-400 mt-0.5">
-                        <Loader2 className="w-3 h-3 animate-spin" /> {doc.status === 'indexing' ? 'Đang lập chỉ mục' : 'Đang xử lý'}
-                    </span>
-                )}
+                <span className={`inline-flex items-center gap-1 self-start mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${state.badge}`}>
+                    <StateIcon className={`w-3 h-3 ${state.spin ? 'animate-spin' : ''}`} />
+                    {state === DOCUMENT_STATES.awaiting_approval
+                        ? getApprovalStageLabel(doc.approval_status)
+                        : state.shortLabel}
+                </span>
 
                 {/* Modified date + three-dot menu */}
                 <div className="flex items-center justify-between mt-0.5">

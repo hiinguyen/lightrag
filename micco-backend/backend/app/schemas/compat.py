@@ -194,6 +194,9 @@ class ProcessingStatusResponse(BaseModel):
     id: int
     name: str
     status: str
+    # Needed alongside `status`: a failed document is handed back to the
+    # approval queue, so the UI has to tell "chờ duyệt" apart from "xử lý lỗi".
+    approval_status: str
     chunk_count: int
     error_message: str | None = None
     uploader_name: str
@@ -205,6 +208,7 @@ class ProcessingStatusResponse(BaseModel):
 
 class StatusCounts(BaseModel):
     all: int = 0
+    pending: int = 0
     processing: int = 0
     indexed: int = 0
     failed: int = 0

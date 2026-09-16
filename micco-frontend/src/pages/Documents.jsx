@@ -14,6 +14,7 @@ import DocumentCard from '../components/documents/DocumentCard';
 import Breadcrumb from '../components/shared/Breadcrumb';
 import { formatBytes, getExt } from '../utils/formatters';
 import { approvalsApi } from '../utils/api';
+import { DOCUMENT_STATES, resolveDocumentState } from '../utils/documentStatus';
 
 const categories = ['All', 'Tài liệu', 'Hợp đồng', 'Báo cáo', 'Biên bản', 'Quy trình', 'Khác'];
 const ROWS_PER_PAGE = 5;
@@ -134,7 +135,11 @@ export default function Documents() {
                         if (st.status === 'indexed') {
                             showToast(`✅ "${name}" đã xử lý xong và sẵn sàng sử dụng!`, 'success', 6000);
                         } else {
-                            showToast(`❌ "${name}" xử lý thất bại. Vui lòng thử lại.`, 'error', 6000);
+                            showToast(
+                                `❌ "${name}" xử lý thất bại: ${st.error_message || 'lỗi không xác định'}. Tài liệu đã quay lại hàng đợi phê duyệt.`,
+                                'error',
+                                8000,
+                            );
                         }
 
                         // Refresh list after 1s so status updates in the table
@@ -195,11 +200,13 @@ export default function Documents() {
                 // Schedule a list refresh while there are pending or processing docs.
                 // This lets user see the progress bar appear after admin approval
                 // without manual page reload.
-                const needsRefresh = docs.some(doc =>
-                    doc.approval_status === 'pending' ||
-                    (doc.approval_status === 'approved' &&
-                     ['parsing', 'processing', 'indexing'].includes(doc.status))
-                );
+                // Tài liệu lỗi cũng nằm ở hàng đợi phê duyệt nhưng tiến trình của nó
+                // đã dừng hẳn — loại ra để không refresh vô hạn.
+                const needsRefresh = docs.some(doc => {
+                    const state = resolveDocumentState(doc);
+                    return state === DOCUMENT_STATES.awaiting_approval ||
+                           state === DOCUMENT_STATES.processing;
+                });
                 if (listRefreshRef.current) {
                     clearTimeout(listRefreshRef.current);
                     listRefreshRef.current = null;

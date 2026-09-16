@@ -1,9 +1,14 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { File, Eye, Download, Share2, Trash2, MoreHorizontal, Clock, XCircle } from 'lucide-react';
+import { File, Eye, Download, Share2, Trash2, MoreHorizontal } from 'lucide-react';
 import { fileTypeIconMap, fileTypeColors, fileTypeBgColors } from './fileTypes';
 import { getExt, formatBytes, formatDate, getInitials, avatarColor, categoryColors, getCategoryLabel } from '../../utils/formatters';
 import ProcessingProgressBar from '../shared/ProcessingProgressBar';
+import {
+    DOCUMENT_STATES,
+    resolveDocumentState,
+    getApprovalStageLabel,
+} from '../../utils/documentStatus';
 
 function DropdownMenu({ anchorEl, onClose, children }) {
     const menuRef = useRef(null);
@@ -75,13 +80,13 @@ export default function DocumentRow({ doc, openMenu, onToggleMenu, onView, onDow
 
     // Effective processing status: prefer live-polled data, fall back to doc field
     const liveStatus = processingStatus?.status || doc.status;
-    const isActivelyProcessing =
-        doc.approval_status === 'approved' &&
-        ['parsing', 'processing', 'indexing'].includes(liveStatus);
+    const state = resolveDocumentState({ ...doc, status: liveStatus });
+    // Thanh tiến trình chỉ có nghĩa khi tài liệu đã vào pipeline và ta có dữ liệu
+    // poll; các trạng thái còn lại (chờ duyệt, lỗi, từ chối) dùng badge trạng thái.
     const showProgressBar =
-        doc.approval_status === 'approved' &&
-        ['parsing', 'processing', 'indexing', 'indexed', 'failed'].includes(liveStatus) &&
-        processingStatus; // only show bar when we have live data
+        Boolean(processingStatus) &&
+        (state === DOCUMENT_STATES.processing || state === DOCUMENT_STATES.indexed);
+    const StateIcon = state.icon;
 
     const cells = (
         <>
@@ -119,16 +124,6 @@ export default function DocumentRow({ doc, openMenu, onToggleMenu, onView, onDow
                                 )}
                             </div>
                         )}
-                        {doc.approval_status === 'pending' && (
-                            <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                                <Clock className="w-3 h-3" /> Chờ duyệt
-                            </span>
-                        )}
-                        {doc.approval_status === 'rejected' && (
-                            <span className="inline-flex items-center gap-1 text-xs text-red-500 dark:text-red-400 mt-0.5">
-                                <XCircle className="w-3 h-3" /> Từ chối
-                            </span>
-                        )}
                         {showProgressBar ? (
                             <ProcessingProgressBar
                                 status={processingStatus.status}
@@ -136,10 +131,18 @@ export default function DocumentRow({ doc, openMenu, onToggleMenu, onView, onDow
                                 errorMessage={processingStatus.error_message}
                                 compact
                             />
-                        ) : isActivelyProcessing && (
-                            <span className="inline-flex items-center gap-1 text-xs text-primary-500 dark:text-primary-400 mt-0.5">
-                                {liveStatus === 'indexing' ? 'Đang lập chỉ mục' : 'Đang xử lý'}
+                        ) : (
+                            <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${state.badge}`}>
+                                <StateIcon className={`w-3 h-3 ${state.spin ? 'animate-spin' : ''}`} />
+                                {state === DOCUMENT_STATES.awaiting_approval
+                                    ? getApprovalStageLabel(doc.approval_status)
+                                    : state.shortLabel}
                             </span>
+                        )}
+                        {state === DOCUMENT_STATES.failed && (
+                            <p className="text-[11px] text-red-500 dark:text-red-400/80 mt-1 line-clamp-2">
+                                {processingStatus?.error_message || doc.error_message || 'Xử lý thất bại — phê duyệt lại để thử lại.'}
+                            </p>
                         )}
                     </div>
                 </div>

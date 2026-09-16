@@ -59,6 +59,11 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 UPLOAD_DIR = settings.BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# Statuses an approval may kick ingestion off from. FAILED is included because
+# a crashed ingestion hands the document back to the approval queue, making
+# "approve again" the retry action.
+RETRYABLE_INGEST_STATUSES = (DocumentStatus.PENDING, DocumentStatus.FAILED)
+
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".pptx", ".xlsx", ".csv"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
@@ -132,22 +137,17 @@ async def process_document_background(document_id: int, file_path: str, workspac
             logger.error(f"Failed to process document {document_id}: {e}")
             # Guarantee FAILED status even if process_document's own handler failed
             try:
-                from sqlalchemy import select, update
+                from sqlalchemy import select
                 from app.models.document import Document, DocumentStatus
+                from app.services.document_failure import mark_document_failed
+
+                await db.rollback()
                 result = await db.execute(
-                    select(Document.status).where(Document.id == document_id)
+                    select(Document).where(Document.id == document_id)
                 )
-                current_status = result.scalar_one_or_none()
-                if current_status and current_status != DocumentStatus.FAILED:
-                    await db.execute(
-                        update(Document)
-                        .where(Document.id == document_id)
-                        .values(
-                            status=DocumentStatus.FAILED,
-                            error_message=str(e)[:500],
-                        )
-                    )
-                    await db.commit()
+                document = result.scalar_one_or_none()
+                if document is not None and document.status != DocumentStatus.FAILED:
+                    await mark_document_failed(db, document, e)
             except Exception as recovery_err:
                 logger.error(f"Failed to set FAILED status for doc {document_id}: {recovery_err}")
 
@@ -265,10 +265,14 @@ async def _finalize_approval_and_ingest(
     n8n approval-callback endpoint below, so the workspace-resolution + ingest
     kickoff logic lives in exactly one place.
 
-    The PENDING -> PROCESSING transition is a single conditional UPDATE, so two
-    concurrent/racing calls (e.g. a retried n8n callback) can't both win and
-    double-enqueue ingestion. Returns None if this call lost that race (the
-    document was no longer PENDING by the time it ran).
+    The PENDING/FAILED -> PROCESSING transition is a single conditional UPDATE,
+    so two concurrent/racing calls (e.g. a retried n8n callback) can't both win
+    and double-enqueue ingestion. Returns None if this call lost that race (the
+    document had already left the retryable states by the time it ran).
+
+    FAILED is retryable on purpose: a document whose ingestion crashed is sent
+    back to the approval queue (see app.services.document_failure), so approving
+    it again is how an approver retries.
     """
     from sqlalchemy import update as sa_update
 
@@ -280,14 +284,19 @@ async def _finalize_approval_and_ingest(
 
     result = await db.execute(
         sa_update(Document)
-        .where(Document.id == document.id, Document.status == DocumentStatus.PENDING)
-        .values(approval_status="approved", status=DocumentStatus.PROCESSING)
+        .where(Document.id == document.id, Document.status.in_(RETRYABLE_INGEST_STATUSES))
+        .values(
+            approval_status="approved",
+            status=DocumentStatus.PROCESSING,
+            error_message=None,
+        )
     )
     await db.commit()
     if result.rowcount == 0:
         return None
     document.approval_status = "approved"
     document.status = DocumentStatus.PROCESSING
+    document.error_message = None
 
     file_path = str(UPLOAD_DIR / document.filename)
 

@@ -1,77 +1,72 @@
-import { Clock, FileSearch, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-
-// Trạng thái processing theo thứ tự — đồng bộ với Approvals.jsx
-export const PROCESSING_STEPS = [
-    { key: 'pending',    label: 'Chờ xử lý',       icon: Clock },
-    { key: 'parsing',    label: 'Đang phân tích',   icon: FileSearch },
-    { key: 'processing', label: 'Đang xử lý',       icon: Loader2 },
-    { key: 'indexing',   label: 'Đang lập chỉ mục', icon: Loader2 },
-    { key: 'indexed',    label: 'Hoàn tất',          icon: CheckCircle2 },
-    { key: 'failed',     label: 'Thất bại',          icon: AlertCircle },
-];
-
-export function getStepIndex(status) {
-    const idx = PROCESSING_STEPS.findIndex(
-        (s) => s.key === (status?.toLowerCase?.() || status)
-    );
-    return idx === -1 ? 0 : idx;
-}
+import { Loader2 } from 'lucide-react';
+import {
+    DOCUMENT_STATES,
+    PIPELINE_STEPS,
+    getPipelineStepLabel,
+    resolveDocumentState,
+} from '../../utils/documentStatus';
 
 /**
- * ProcessingProgressBar — hiển thị tiến trình xử lý tài liệu sau khi được duyệt.
- * Dùng cho cả trang admin (Approvals) và trang user (Documents, DocumentView).
+ * ProcessingProgressBar — tiến trình xử lý tài liệu sau khi được duyệt.
+ * Dùng chung cho Approvals, Documents, DocumentView và Tiến trình xử lý.
+ *
+ * Nhãn và màu lấy từ utils/documentStatus.js để mọi trang nói cùng một ngôn ngữ.
  *
  * Props:
- *   status       — string: 'pending' | 'parsing' | 'processing' | 'indexing' | 'indexed' | 'failed'
+ *   status       — 'parsing' | 'processing' | 'indexing' | 'indexed' | 'failed'
  *   chunkCount   — number (optional)
  *   errorMessage — string (optional)
- *   compact      — boolean: nếu true thì render nhỏ gọn hơn (dùng trong danh sách)
+ *   compact      — boolean: render nhỏ gọn hơn khi nằm trong danh sách
  */
 export default function ProcessingProgressBar({ status, chunkCount, errorMessage, compact = false }) {
-    const stepIdx = getStepIndex(status);
-    const isDone = status === 'indexed';
-    const isFailed = status === 'failed';
+    const state = resolveDocumentState({ status, approval_status: 'approved' });
+    const isDone = state === DOCUMENT_STATES.indexed;
+    const isFailed = state === DOCUMENT_STATES.failed;
+    const currentStepIdx = PIPELINE_STEPS.findIndex(
+        (s) => s.key === String(status || '').toLowerCase()
+    );
+    const StateIcon = state.icon;
+
+    const dotSize = compact ? 'w-4 h-4' : 'w-5 h-5';
+    const dotIconSize = compact ? 'w-2.5 h-2.5' : 'w-3 h-3';
+    const labelIconSize = compact ? 'w-3 h-3' : 'w-3.5 h-3.5';
 
     return (
         <div className={`flex items-center gap-3 ${compact ? 'mt-1' : 'mt-2'}`}>
-            {/* Step dots */}
+            {/* Các bước pipeline */}
             <div className="flex items-center gap-1">
-                {PROCESSING_STEPS.filter((s) => s.key !== 'pending').map((step, i) => {
-                    const sIdx = i + 1; // offset from 'pending'
-                    const isActive = sIdx === stepIdx;
-                    const isPast = sIdx < stepIdx || isDone;
+                {PIPELINE_STEPS.map((step, i) => {
+                    const isActive = i === currentStepIdx;
+                    const isPast = isDone || (currentStepIdx > -1 && i < currentStepIdx);
                     const StepIcon = step.icon;
+                    // Tài liệu lỗi không còn bước "đang chạy" — đánh dấu đỏ ở bước
+                    // đầu để thấy ngay tiến trình đã dừng giữa chừng.
+                    const failedMarker = isFailed && currentStepIdx === -1 && i === 0;
                     return (
-                        <div key={step.key} className="flex items-center gap-1">
+                        <div key={step.key} className="flex items-center gap-1" title={step.label}>
                             <div
-                                className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} rounded-full flex items-center justify-center ${
-                                    isDone
-                                        ? 'bg-emerald-500'
-                                        : isFailed && isActive
+                                className={`${dotSize} rounded-full flex items-center justify-center flex-shrink-0 ${
+                                    isFailed && (isActive || failedMarker)
                                         ? 'bg-red-500'
+                                        : isDone
+                                        ? 'bg-emerald-500'
                                         : isPast || isActive
                                         ? 'bg-primary-500'
                                         : 'bg-gray-200 dark:bg-gray-700'
                                 }`}
                             >
                                 <StepIcon
-                                    className={`${compact ? 'w-2.5 h-2.5' : 'w-3 h-3'} ${
-                                        isDone
-                                            ? 'text-white'
-                                            : isFailed && isActive
-                                            ? 'text-white'
-                                            : isPast || isActive
+                                    className={`${dotIconSize} ${
+                                        isDone || isPast || isActive || failedMarker
                                             ? 'text-white'
                                             : 'text-gray-400'
-                                    } ${isActive && !isFailed ? 'animate-spin' : ''}`}
+                                    } ${isActive && !isFailed && !isDone ? 'animate-spin' : ''}`}
                                 />
                             </div>
-                            {i < PROCESSING_STEPS.length - 2 && (
+                            {i < PIPELINE_STEPS.length - 1 && (
                                 <div
                                     className={`${compact ? 'w-3' : 'w-4'} h-0.5 ${
-                                        isPast || isDone
-                                            ? 'bg-primary-400'
-                                            : 'bg-gray-200 dark:bg-gray-700'
+                                        isPast || isDone ? 'bg-primary-400' : 'bg-gray-200 dark:bg-gray-700'
                                     }`}
                                 />
                             )}
@@ -80,31 +75,19 @@ export default function ProcessingProgressBar({ status, chunkCount, errorMessage
                 })}
             </div>
 
-            {/* Label */}
-            <div className="flex items-center gap-1.5">
-                {isDone ? (
-                    <CheckCircle2 className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-emerald-500`} />
-                ) : isFailed ? (
-                    <AlertCircle className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-red-500`} />
+            {/* Nhãn trạng thái */}
+            <div className="flex items-center gap-1.5 min-w-0">
+                {isDone || isFailed ? (
+                    <StateIcon className={`${labelIconSize} ${state.iconColor} flex-shrink-0`} />
                 ) : (
-                    <Loader2 className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} text-primary-500 animate-spin`} />
+                    <Loader2 className={`${labelIconSize} text-primary-500 animate-spin flex-shrink-0`} />
                 )}
-                <span
-                    className={`${compact ? 'text-[10px]' : 'text-xs'} font-medium ${
-                        isDone
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : isFailed
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-primary-600 dark:text-primary-400'
-                    }`}
-                >
+                <span className={`${compact ? 'text-[10px]' : 'text-xs'} font-medium truncate ${state.text}`}>
                     {isDone
-                        ? `Hoàn tất${chunkCount ? ` · ${chunkCount} chunks` : ''}`
+                        ? `${state.label}${chunkCount ? ` · ${chunkCount} chunks` : ''}`
                         : isFailed
-                        ? `Lỗi: ${errorMessage || 'Xử lý thất bại'}`
-                        : `${PROCESSING_STEPS[stepIdx]?.label || 'Đang xử lý'}${
-                              chunkCount > 0 ? ` · ${chunkCount} chunks` : ''
-                          }`}
+                        ? `${state.label}: ${errorMessage || 'Xử lý thất bại'}`
+                        : `${getPipelineStepLabel(status)}${chunkCount > 0 ? ` · ${chunkCount} chunks` : ''}`}
                 </span>
             </div>
         </div>

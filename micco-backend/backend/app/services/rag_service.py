@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.document import Document, DocumentStatus
+from app.services.document_failure import mark_document_failed
 from app.services.document_loader import load_document, LoadedDocument
 from app.services.chunker import DocumentChunker, TextChunk
 from app.services.embedder import EmbeddingService, get_embedding_service
@@ -165,9 +166,7 @@ class RAGService:
 
         except Exception as e:
             logger.error(f"Failed to process document {document_id}: {e}")
-            document.status = DocumentStatus.FAILED
-            document.error_message = str(e)[:500]
-            await self.db.commit()
+            await mark_document_failed(self.db, document, e)
             raise
 
     async def delete_document(self, document_id: int) -> None:
