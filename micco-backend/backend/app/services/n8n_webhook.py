@@ -103,8 +103,9 @@ async def notify_document_uploaded(document_id: int) -> None:
 async def notify_lead_created(lead_id: int) -> None:
     """Post a lead.created event to the configured n8n webhook.
 
-    Same event type as notify_document_uploaded (this is the same n8n
-    instance, discriminated by the "event" field) — no new secret or URL.
+    Posted to the same n8n instance/URL as notify_document_uploaded, as a
+    different event type — discriminated by the "event" field. No new
+    secret or URL.
     """
     if not settings.N8N_WEBHOOK_URL:
         logger.info(
@@ -128,6 +129,9 @@ async def notify_lead_created(lead_id: int) -> None:
 
             packages: list[dict] = []
             if lead.package_ids:
+                # No is_active filter here, unlike resolve_recommendations: a lead is
+                # a snapshot at confirmation time, so a package deactivated afterward
+                # should still show up correctly in the sales notification.
                 pkg_result = await db.execute(
                     select(BusinessPackage).where(BusinessPackage.id.in_(lead.package_ids))
                 )

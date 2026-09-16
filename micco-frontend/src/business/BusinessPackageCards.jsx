@@ -5,8 +5,9 @@
  * here comes from the server's card projection (business_packages.to_card), so
  * this component renders what it is given and derives nothing.
  *
- * Deliberately not clickable yet: acting on a suggestion is Phase 5, and a
- * card that looks pressable but does nothing is worse than a plain one.
+ * Deliberately not clickable: a card that looks pressable but does nothing
+ * is worse than a plain one. Acting on a suggestion happens through the
+ * chat's [[LEAD:...]] flow (see BusinessLeadPrompt), not by clicking a card.
  */
 import { Package } from 'lucide-react';
 

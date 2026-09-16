@@ -154,6 +154,8 @@ Thêm hàm mới trong `app/services/n8n_webhook.py`, cùng pattern với `notif
 
 **Giả định phía n8n (ngoài phạm vi code)**: workflow n8n hiện tại phải thêm một nhánh rẽ theo `event` (`document.uploaded` vs `lead.created`) và định dạng tin nhắn Telegram riêng cho lead — đây là thay đổi cấu hình bên n8n, không phải backend.
 
+`lead.summary` trong payload đến từ chính request body của khách hàng xác nhận (`POST /business/leads`), không chỉ thuần từ output đã validate của model: server không thể phân biệt một summary đến từ đề xuất `[[LEAD:...]]` với một summary do client tự soạn rồi gửi thẳng lên (bản nháp `lead_prompt` không được lưu DB để đối chiếu lại). Vì vậy phía n8n phải coi `lead.summary` là free text chưa tin cậy khi format vào tin nhắn Telegram — tránh dùng parse mode Markdown/HTML có thể bị khai thác, hoặc escape nội dung trước khi chèn vào tin nhắn.
+
 ### 7. Frontend
 
 - `businessApi.js`: thêm `businessChatApi.createLead({summary, package_ids})` (POST `/leads`); switch trong `streamBusinessChat` thêm `case 'lead_prompt': onLeadPrompt?.(chunk)`.
